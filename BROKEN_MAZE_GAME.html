@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BROKEN MAZE - Game</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent-color: #bb86fc;
+            --border-color: #333;
+            --start-color: #4fc3f7;
+            --finish-color: #ef5350;
+            --stair-color: #ffb74d;
+            --edge-color: #757575;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header / Navigation Hint */
+        .nav-hint {
+            text-align: center;
+            padding: 8px;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Settings Panel */
+        .settings-panel {
+            width: 300px;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .settings-panel h3 {
+            margin: 0 0 10px 0;
+            color: var(--accent-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .setting-row input[type="number"] {
+            width: 60px;
+            background: #2c2c2c;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 10px;
+            background: var(--accent-color);
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Game Field */
+        .game-field-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .game-field {
+            background: #0a0a0a;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            overflow: auto; /* Бегунки, если лабиринт больше поля */
+            max-width: 100%;
+            max-height: 100%;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        .maze-output {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 18px;
+            line-height: 1.2;
+            white-space: pre;
+            margin: 0;
+            color: var(--edge-color);
+        }
+
+        .maze-output .start { color: var(--start-color); font-weight: bold; }
+        .maze-output .finish { color: var(--finish-color); font-weight: bold; }
+        .maze-output .stair { color: var(--stair-color); }
+        .maze-output .floor-title { color: #ff5252; font-weight: bold; text-align: center; display: block; margin-bottom: 10px;}
+
+        /* HUD */
+        .hud-panel {
+            height: 60px;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 0 20px;
+            font-size: 14px;
+        }
+
+        .hud-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hud-label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .hud-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="nav-hint" id="navHint">
+        Используйте колесико мыши для навигации между этажами
+    </div>
+
+    <div class="main-container">
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settingsPanel">
+            <h3>⚙️ Настройки генерации</h3>
+            <div class="setting-group" id="globalSettings">
+                <div class="setting-row">
+                    <span>Ширина (узлы):</span>
+                    <input type="number" id="setWidth" value="5" min="2" max="20">
+                </div>
+                <div class="setting-row">
+                    <span>Высота (узлы):</span>
+                    <input type="number" id="setHeight" value="5" min="2" max="20">
+                </div>
+                <div class="setting-row">
+                    <span>Кол-во этажей:</span>
+                    <input type="number" id="setFloors" value="2" min="1" max="10">
+                </div>
+                <div class="setting-row">
+                    <span>Метрика:</span>
+                    <select id="setMetric" style="width: 100px; background: #2c2c2c; color: #e0e0e0; border: 1px solid #333; padding: 4px;">
+                        <option value="graph">Графовая</option>
+                        <option value="euclid">Евклидова</option>
+                        <option value="avg">Усреднённая</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="dynamicSettings"></div>
+
+            <button class="btn" id="btnGenerate">Сгенерировать</button>
+        </div>
+
+        <!-- Game Field -->
+        <div class="game-field-container">
+            <div class="game-field" id="gameField">
+                <pre class="maze-output" id="mazeOutput">Нажмите "Сгенерировать"</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div class="hud-panel" id="hudPanel">
+        <div class="hud-item">
+            <span class="hud-label">Старт (X,Y,F)</span>
+            <span class="hud-value" id="hudStart">-</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Финиш (X,Y,F)</span>
+            <span class="hud-value" id="hudFinish">-</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Дистанция</span>
+            <span class="hud-value" id="hudDist">-</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Метрика</span>
+            <span class="hud-value" id="hudMetric">-</span>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">Текущий этаж</span>
+            <span class="hud-value" id="hudFloor">-</span>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="stubs.js"></script>
+    <script src="stage1.js"></script>
+</body>
+</html>
