@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BROKEN MAZE — Этап 1</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e; color: #e0e0e0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+
+  /* ===== SETTINGS PANEL ===== */
+  #settings-panel {
+    width: 320px; min-width: 320px;
+    background: #16213e; padding: 16px;
+    overflow-y: auto; border-right: 2px solid #0f3460;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #settings-panel h2 { color: #e94560; margin-bottom: 8px; font-size: 18px; }
+  #settings-panel h3 { color: #53a8b6; font-size: 14px; margin-top: 8px; }
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 0; font-size: 13px;
+  }
+  .setting-row label { flex: 1; }
+  .setting-row input, .setting-row select {
+    width: 80px; padding: 4px 6px; border-radius: 4px;
+    border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0;
+    font-size: 13px;
+  }
+  .setting-row input[type="range"] { width: 80px; }
+  .setting-row .range-val { width: 36px; text-align: right; font-size: 12px; color: #aaa; }
+  #generate-btn {
+    margin-top: 12px; padding: 10px; font-size: 15px; font-weight: bold;
+    background: #e94560; color: #fff; border: none; border-radius: 6px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  #generate-btn:hover { background: #c73650; }
+
+  /* ===== GAME AREA ===== */
+  #game-container {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; padding: 12px; overflow: hidden;
+  }
+  #nav-hint {
+    background: #0f3460; color: #53a8b6; padding: 6px 16px;
+    border-radius: 4px; font-size: 13px; margin-bottom: 8px;
+    text-align: center;
+  }
+  #game-field {
+    flex: 1; width: 100%; max-width: 1200px;
+    background: #0d1117; border: 2px solid #0f3460; border-radius: 6px;
+    overflow: auto; position: relative;
+  }
+  #maze-output {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 16px; line-height: 1.2; letter-spacing: 1px;
+    padding: 16px; white-space: pre; color: #c9d1d9;
+    min-width: fit-content; min-height: fit-content;
+  }
+  /* Node symbols coloring */
+  .sym-S { color: #58a6ff; font-weight: bold; }
+  .sym-F { color: #f85149; font-weight: bold; }
+  .sym-stair { color: #d29922; }
+  .sym-node { color: #8b949e; }
+  .sym-edge { color: #484f58; }
+
+  /* ===== INFO PANEL ===== */
+  #info-panel {
+    width: 100%; max-width: 1200px;
+    background: #16213e; border: 1px solid #0f3460; border-radius: 6px;
+    padding: 10px 16px; margin-top: 8px;
+    display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px;
+  }
+  #info-panel .info-item { display: flex; gap: 6px; }
+  #info-panel .info-label { color: #53a8b6; }
+  #info-panel .info-value { color: #e0e0e0; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- ===== SETTINGS ===== -->
+<div id="settings-panel">
+  <h2>⚙️ Настройки уровня</h2>
+
+  <div class="setting-row">
+    <label>Ширина (узлы):</label>
+    <input type="number" id="s-width" value="6" min="2" max="25">
+  </div>
+  <div class="setting-row">
+    <label>Высота (узлы):</label>
+    <input type="number" id="s-height" value="5" min="2" max="25">
+  </div>
+  <div class="setting-row">
+    <label>Этажи:</label>
+    <input type="number" id="s-floors" value="2" min="1" max="10">
+  </div>
+  <div class="setting-row">
+    <label>Метрика:</label>
+    <select id="s-metric">
+      <option value="graph">Графовый (BFS)</option>
+      <option value="euclidean">Евклидов</option>
+      <option value="average">Усреднённый</option>
+    </select>
+  </div>
+  <div class="setting-row">
+    <label>Дистанция до финиша:</label>
+    <input type="number" id="s-distance" value="6" min="1" max="200">
+  </div>
+
+  <h3>🔄 Циклы по этажам</h3>
+  <div id="floor-settings"></div>
+
+  <h3>🪜 Лестницы между этажами</h3>
+  <div id="stair-settings"></div>
+
+  <button id="generate-btn">🔄 Сгенерировать</button>
+</div>
+
+<!-- ===== GAME ===== -->
+<div id="game-container">
+  <div id="nav-hint">Используйте колесико мыши для навигации между этажами</div>
+  <div id="game-field">
+    <pre id="maze-output">Нажмите «Сгенерировать»...</pre>
+  </div>
+  <div id="info-panel">
+    <div class="info-item"><span class="info-label">Этаж:</span><span class="info-value" id="i-floor">—</span></div>
+    <div class="info-item"><span class="info-label">Старт:</span><span class="info-value" id="i-start">—</span></div>
+    <div class="info-item"><span class="info-label">Финиш:</span><span class="info-value" id="i-finish">—</span></div>
+    <div class="info-item"><span class="info-label">Расстояние:</span><span class="info-value" id="i-dist">—</span></div>
+    <div class="info-item"><span class="info-label">Метрика:</span><span class="info-value" id="i-metric">—</span></div>
+    <div class="info-item"><span class="info-label">Узлов:</span><span class="info-value" id="i-nodes">—</span></div>
+    <div class="info-item"><span class="info-label">Рёбер:</span><span class="info-value" id="i-edges">—</span></div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+//  UTILITIES
+// ================================================================
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function nk(x, y, f) { return `${x},${y},${f}`; }
+
+function ek(k1, k2) { return k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`; }
+
+function parseKey(k) { return k.split(',').map(Number); }
+
+// ================================================================
+//  MAZE CLASS
+// ================================================================
+class Maze {
+  constructor(W, H, F) {
+    this.W = W; this.H = H; this.F = F;
+    this.edges = new Set();       // edge keys
+    this.stairs = new Map();      // nodeKey -> {up:bool, down:bool}
+    this.startKey = null;
+    this.finishKey = null;
+  }
+
+  // --- Neighbors on same floor ---
+  neighbors2D(x, y) {
+    const res = [];
+    // Horizontal
+    if (x > 0) res.push([x - 1, y]);
+    if (x < this.W - 1) res.push([x + 1, y]);
+    // Diagonal (depends on row parity)
+    if (y % 2 === 0) {
+      // up: (x, y-1), (x-1, y-1)
+      if (y > 0) { res.push([x, y - 1]); if (x > 0) res.push([x - 1, y - 1]); }
+      // down: (x, y+1), (x-1, y+1)
+      if (y < this.H - 1) { res.push([x, y + 1]); if (x > 0) res.push([x - 1, y + 1]); }
+    } else {
+      // up: (x, y-1), (x+1, y-1)
+      if (y > 0) { res.push([x, y - 1]); if (x < this.W - 1) res.push([x + 1, y - 1]); }
+      // down: (x, y+1), (x+1, y+1)
+      if (y < this.H - 1) { res.push([x, y + 1]); if (x < this.W - 1) res.push([x + 1, y + 1]); }
+    }
+    return res;
+  }
+
+  allPossibleEdges2D(f) {
+    const edges = [];
+    const seen = new Set();
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W; x++) {
+        for (const [nx, ny] of this.neighbors2D(x, y)) {
+          const e = ek(nk(x, y, f), nk(nx, ny, f));
+          if (!seen.has(e)) { seen.add(e); edges.push(e); }
+        }
+      }
+    }
+    return edges;
+  }
+
+  // --- All graph neighbors (horizontal + stairs) ---
+  allNeighbors(key) {
+    const [x, y, f] = parseKey(key);
+    const res = [];
+    for (const [nx, ny] of this.neighbors2D(x, y)) {
+      const nk2 = nk(nx, ny, f);
+      if (this.edges.has(ek(key, nk2))) res.push(nk2);
+    }
+    // Stairs
+    if (f < this.F - 1) {
+      const up = nk(x, y, f + 1);
+      if (this.edges.has(ek(key, up))) res.push(up);
+    }
+    if (f > 0) {
+      const dn = nk(x, y, f - 1);
+      if (this.edges.has(ek(key, dn))) res.push(dn);
+    }
+    return res;
+  }
+
+  // --- BFS ---
+  bfs(startKey) {
+    const dist = new Map();
+    const queue = [startKey];
+    dist.set(startKey, 0);
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const d = dist.get(cur);
+      for (const nb of this.allNeighbors(cur)) {
+        if (!dist.has(nb)) { dist.set(nb, d + 1); queue.push(nb); }
+      }
+    }
+    return dist;
+  }
+
+  graphDist(a, b) {
+    const d = this.bfs(a);
+    return d.has(b) ? d.get(b) : Infinity;
+  }
+
+  euclideanDist(a, b) {
+    const [x1, y1, f1] = parseKey(a);
+    const [x2, y2, f2] = parseKey(b);
+    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (f2 - f1) ** 2);
+  }
+
+  metricDist(a, b, metric) {
+    const g = this.graphDist(a, b);
+    if (g === Infinity) return Infinity;
+    const e = this.euclideanDist(a, b);
+    if (metric === 'graph') return g;
+    if (metric === 'euclidean') return e;
+    return (g + e) / 2;
+  }
+
+  // ================================================================
+  //  GENERATION
+  // ================================================================
+  generate(cyclePcts, stairPcts) {
+    this.edges.clear();
+    this.stairs.clear();
+    this.startKey = null;
+    this.finishKey = null;
+
+    // 1. Spanning tree per floor (randomized DFS)
+    for (let f = 0; f < this.F; f++) this._buildTree(f);
+
+    // 2. Add cycles per floor
+    for (let f = 0; f < this.F; f++) {
+      const pct = cyclePcts[f] || 0;
+      this._addCycles(f, pct);
+    }
+
+    // 3. Add stairs between adjacent floors
+    for (let f = 0; f < this.F - 1; f++) {
+      const pct = stairPcts[f] || 0;
+      this._addStairs(f, f + 1, pct);
+    }
+
+    // 4. Place start & finish
+    this._placeStartFinish();
+  }
+
+  _buildTree(f) {
+    const nodes = [];
+    for (let y = 0; y < this.H; y++)
+      for (let x = 0; x < this.W; x++) nodes.push(nk(x, y, f));
+    if (nodes.length === 0) return;
+
+    const visited = new Set();
+    const stack = [nodes[Math.floor(Math.random() * nodes.length)]];
+    visited.add(stack[0]);
+
+    while (stack.length > 0) {
+      const cur = stack[stack.length - 1];
+      const [cx, cy] = parseKey(cur);
+      const unvisited = this.neighbors2D(cx, cy)
+        .map(([nx, ny]) => nk(nx, ny, f))
+        .filter(k => !visited.has(k));
+
+      if (unvisited.length > 0) {
+        const next = unvisited[Math.floor(Math.random() * unvisited.length)];
+        this.edges.add(ek(cur, next));
+        visited.add(next);
+        stack.push(next);
+      } else {
+        stack.pop();
+      }
+    }
+  }
+
+  _addCycles(f, pct) {
+    if (pct <= 0) return;
+    const all = this.allPossibleEdges2D(f);
+    const available = all.filter(e => !this.edges.has(e));
+    const num = Math.floor(available.length * pct / 100);
+    shuffle(available);
+    for (let i = 0; i < num && i < available.length; i++) {
+      this.edges.add(available[i]);
+    }
+  }
+
+  _addStairs(f1, f2, pct) {
+    if (pct <= 0) return;
+    const possible = [];
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W; x++) {
+        possible.push([x, y]);
+      }
+    }
+    const num = Math.max(1, Math.floor(possible.length * pct / 100));
+    shuffle(possible);
+    for (let i = 0; i < num && i < possible.length; i++) {
+      const [x, y] = possible[i];
+      const k1 = nk(x, y, f1), k2 = nk(x, y, f2);
+      this.edges.add(ek(k1, k2));
+      // Mark stairs
+      if (!this.stairs.has(k1)) this.stairs.set(k1, { up: false, down: false });
+      if (!this.stairs.has(k2)) this.stairs.set(k2, { up: false, down: false });
+      this.stairs.get(k1).up = true;
+      this.stairs.get(k2).down = true;
+    }
+  }
+
+  _placeStartFinish() {
+    // Pick random start
+    const allNodes = [];
+    for (let f = 0; f < this.F; f++)
+      for (let y = 0; y < this.H; y++)
+        for (let x = 0; x < this.W; x++) allNodes.push(nk(x, y, f));
+
+    shuffle(allNodes);
+    this.startKey = allNodes[0];
+
+    // BFS from start to find reachable nodes
+    const dist = this.bfs(this.startKey);
+    const reachable = [...dist.entries()].filter(([k]) => k !== this.startKey);
+
+    if (reachable.length === 0) {
+      this.finishKey = allNodes.length > 1 ? allNodes[1] : this.startKey;
+      return;
+    }
+
+    // Try to find node at desired graph distance
+    const targetDist = parseInt(document.getElementById('s-distance').value) || 6;
+    const metric = document.getElementById('s-metric').value;
+
+    // Sort by metric distance, try to match target
+    reachable.sort((a, b) => {
+      const da = this.metricDist(this.startKey, a[0], metric);
+      const db = this.metricDist(this.startKey, b[0], metric);
+      return Math.abs(da - targetDist) - Math.abs(db - targetDist);
+    });
+
+    this.finishKey = reachable[0][0];
+  }
+
+  // ================================================================
+  //  RENDERING (ASCII)
+  // ================================================================
+  renderFloor(f) {
+    const charW = 4 * this.W + 2;
+    const charH = 2 * this.H - 1;
+    // Init grid with spaces
+    const grid = [];
+    for (let r = 0; r < charH; r++) {
+      grid.push(new Array(charW).fill(' '));
+    }
+
+    const setChar = (c, r, ch) => {
+      if (r >= 0 && r < charH && c >= 0 && c < charW) grid[r][c] = ch;
+    };
+
+    // Draw nodes
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W; x++) {
+        const col = 4 * x + 2 * (y % 2);
+        const row = 2 * y;
+        const key = nk(x, y, f);
+        let sym = '●';
+        if (key === this.startKey) sym = 'S';
+        else if (key === this.finishKey) sym = 'F';
+        else {
+          const st = this.stairs.get(key);
+          if (st) {
+            if (st.up && st.down) sym = '↕';
+            else if (st.up) sym = '↑';
+            else if (st.down) sym = '↓';
+          }
+        }
+        setChar(col, row, sym);
+      }
+    }
+
+    // Draw horizontal edges
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W - 1; x++) {
+        const k1 = nk(x, y, f), k2 = nk(x + 1, y, f);
+        if (this.edges.has(ek(k1, k2))) {
+          const col = 4 * x + 2 * (y % 2) + 2;
+          const row = 2 * y;
+          setChar(col, row, '-');
+        }
+      }
+    }
+
+    // Draw diagonal edges (between row y and y+1)
+    for (let y = 0; y < this.H - 1; y++) {
+      for (let x = 0; x < this.W; x++) {
+        const col1 = 4 * x + 2 * (y % 2);
+        const row1 = 2 * y;
+
+        // Determine diagonal neighbors going down
+        let diagNeighbors;
+        if (y % 2 === 0) {
+          diagNeighbors = [[x, y + 1], [x - 1, y + 1]]; // SE, SW
+        } else {
+          diagNeighbors = [[x + 1, y + 1], [x, y + 1]]; // SE, SW
+        }
+
+        for (const [nx, ny] of diagNeighbors) {
+          if (nx < 0 || nx >= this.W || ny < 0 || ny >= this.H) continue;
+          const k1 = nk(x, y, f), k2 = nk(nx, ny, f);
+          if (this.edges.has(ek(k1, k2))) {
+            const col2 = 4 * nx + 2 * (ny % 2);
+            const dCol = col2 - col1;
+            const midCol = col1 + Math.round(dCol / 2);
+            const midRow = row1 + 1;
+            if (dCol > 0) setChar(midCol, midRow, '\\');
+            else if (dCol < 0) setChar(midCol, midRow, '/');
+            else setChar(midCol, midRow, '|');
+          }
+        }
+      }
+    }
+
+    // Build string
+    let result = `Этаж ${f}:\n`;
+    for (let r = 0; r < charH; r++) {
+      result += grid[r].join('') + '\n';
+    }
+    return result;
+  }
+}
+
+// ================================================================
+//  UI LOGIC
+// ================================================================
+let maze = null;
+let currentFloor = 0;
+
+function buildDynamicSettings() {
+  const floors = parseInt(document.getElementById('s-floors').value) || 2;
+
+  // Floor cycle settings
+  const floorDiv = document.getElementById('floor-settings');
+  floorDiv.innerHTML = '';
+  for (let f = 0; f < floors; f++) {
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    row.innerHTML = `
+      <label>Этаж ${f} циклы %:</label>
+      <input type="range" id="s-cycle-${f}" min="0" max="100" value="20">
+      <span class="range-val" id="s-cycle-val-${f}">20</span>
+    `;
+    floorDiv.appendChild(row);
+    row.querySelector('input').addEventListener('input', (e) => {
+      document.getElementById(`s-cycle-val-${f}`).textContent = e.target.value;
+    });
+  }
+
+  // Stair settings
+  const stairDiv = document.getElementById('stair-settings');
+  stairDiv.innerHTML = '';
+  for (let f = 0; f < floors - 1; f++) {
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    row.innerHTML = `
+      <label>${f}↔${f + 1} лестницы %:</label>
+      <input type="range" id="s-stair-${f}" min="0" max="100" value="30">
+      <span class="range-val" id="s-stair-val-${f}">30</span>
+    `;
+    stairDiv.appendChild(row);
+    row.querySelector('input').addEventListener('input', (e) => {
+      document.getElementById(`s-stair-val-${f}`).textContent = e.target.value;
+    });
+  }
+}
+
+function generateAndRender() {
+  const W = Math.max(2, parseInt(document.getElementById('s-width').value) || 6);
+  const H = Math.max(2, parseInt(document.getElementById('s-height').value) || 5);
+  const F = Math.max(1, parseInt(document.getElementById('s-floors').value) || 2);
+
+  const cyclePcts = [];
+  for (let f = 0; f < F; f++) {
+    const el = document.getElementById(`s-cycle-${f}`);
+    cyclePcts.push(el ? parseInt(el.value) : 20);
+  }
+  const stairPcts = [];
+  for (let f = 0; f < F - 1; f++) {
+    const el = document.getElementById(`s-stair-${f}`);
+    stairPcts.push(el ? parseInt(el.value) : 30);
+  }
+
+  maze = new Maze(W, H, F);
+  maze.generate(cyclePcts, stairPcts);
+  currentFloor = Math.min(currentFloor, F - 1);
+  renderCurrentFloor();
+}
+
+function renderCurrentFloor() {
+  if (!maze) return;
+  const out = document.getElementById('maze-output');
+
+  // Render only current floor
+  out.textContent = maze.renderFloor(currentFloor);
+
+  // Colorize using spans (re-render with HTML)
+  const raw = maze.renderFloor(currentFloor);
+  let html = '';
+  for (const ch of raw) {
+    if (ch === 'S') html += '<span class="sym-S">S</span>';
+    else if (ch === 'F') html += '<span class="sym-F">F</span>';
+    else if (ch === '↑' || ch === '↓' || ch === '↕') html += `<span class="sym-stair">${ch}</span>`;
+    else if (ch === '●') html += '<span class="sym-node">●</span>';
+    else if (ch === '-' || ch === '/' || ch === '\\' || ch === '|') html += `<span class="sym-edge">${ch === '\\' ? '\\' : ch}</span>`;
+    else html += ch;
+  }
+  out.innerHTML = html;
+
+  // Update info
+  const metric = document.getElementById('s-metric').value;
+  const metricNames = { graph: 'Графовый (BFS)', euclidean: 'Евклидов', average: 'Усреднённый' };
+  const dist = maze.metricDist(maze.startKey, maze.finishKey, metric);
+  const [sx, sy, sf] = parseKey(maze.startKey);
+  const [fx, fy, ff] = parseKey(maze.finishKey);
+
+  document.getElementById('i-floor').textContent = `${currentFloor} из ${maze.F - 1}`;
+  document.getElementById('i-start').textContent = `(${sx}, ${sy}, этаж ${sf})`;
+  document.getElementById('i-finish').textContent = `(${fx}, ${fy}, этаж ${ff})`;
+  document.getElementById('i-dist').textContent = dist === Infinity ? '∞' : (Number.isInteger(dist) ? dist : dist.toFixed(2));
+  document.getElementById('i-metric').textContent = metricNames[metric] || metric;
+  document.getElementById('i-nodes').textContent = maze.W * maze.H * maze.F;
+  document.getElementById('i-edges').textContent = maze.edges.size;
+}
+
+// --- Event listeners ---
+document.getElementById('s-floors').addEventListener('change', buildDynamicSettings);
+document.getElementById('generate-btn').addEventListener('click', generateAndRender);
+
+// Wheel navigation
+document.getElementById('game-field').addEventListener('wheel', (e) => {
+  if (!maze) return;
+  e.preventDefault();
+  if (e.deltaY < 0 && currentFloor < maze.F - 1) currentFloor++;
+  else if (e.deltaY > 0 && currentFloor > 0) currentFloor--;
+  renderCurrentFloor();
+}, { passive: false });
+
+// --- Init ---
+buildDynamicSettings();
+generateAndRender();
+</script>
+</body>
+</html>

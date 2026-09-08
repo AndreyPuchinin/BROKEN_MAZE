@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BROKEN_MAZE — Этап 1</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #1a1a2e; color: #e0e0e0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  header {
+    background: #16213e; padding: 10px 20px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  header h1 { font-size: 18px; color: #e94560; white-space: nowrap; }
+
+  .main-wrap { display: flex; flex: 1; overflow: hidden; }
+
+  .settings-panel {
+    width: 340px; min-width: 300px;
+    background: #16213e; border-right: 1px solid #0f3460;
+    overflow-y: auto; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .settings-panel h2 { font-size: 15px; color: #e94560; border-bottom: 1px solid #0f3460; padding-bottom: 4px; }
+  .settings-panel label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+  .settings-panel input[type=number],
+  .settings-panel select {
+    background: #0f3460; color: #e0e0e0; border: 1px solid #533483;
+    border-radius: 4px; padding: 4px 6px; font-size: 13px; width: 100%;
+  }
+  .settings-panel input[type=number] { width: 70px; }
+  .setting-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .setting-row label { flex: 1; min-width: 120px; }
+  .floor-setting { display: flex; gap: 6px; align-items: center; font-size: 12px; margin-bottom: 4px; }
+  .floor-setting span { min-width: 60px; color: #a8a8b3; }
+  .floor-setting input { width: 55px !important; }
+  .btn {
+    background: #e94560; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 14px; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .btn:hover { background: #c73652; }
+  .section-title { font-size: 13px; color: #a8a8b3; margin-top: 6px; }
+
+  .right-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .nav-hint {
+    background: #0f3460; text-align: center; padding: 6px;
+    font-size: 13px; color: #a8a8b3; border-bottom: 1px solid #533483;
+  }
+
+  .game-field-wrap {
+    flex: 1; display: flex; justify-content: center; align-items: center;
+    overflow: hidden; padding: 12px;
+  }
+  .game-field {
+    max-width: 100%; max-height: 100%;
+    overflow: auto; background: #0a0a1a;
+    border: 1px solid #533483; border-radius: 6px;
+    padding: 10px; position: relative;
+  }
+  .game-field pre {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 16px; line-height: 1.2;
+    margin: 0; white-space: pre;
+    color: #00ff88;
+  }
+
+  .info-panel {
+    background: #16213e; border-top: 1px solid #0f3460;
+    padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px 24px;
+    font-size: 13px;
+  }
+  .info-panel .info-item { display: flex; gap: 6px; }
+  .info-panel .info-label { color: #a8a8b3; }
+  .info-panel .info-value { color: #00ff88; font-weight: 600; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #0a0a1a; }
+  ::-webkit-scrollbar-thumb { background: #533483; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #e94560; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BROKEN_MAZE — Этап 1</h1>
+</header>
+
+<div class="main-wrap">
+  <aside class="settings-panel" id="settingsPanel">
+    <h2>⚙ Настройки уровня</h2>
+
+    <div class="setting-row">
+      <label>Ширина (узлов)
+        <input type="number" id="setWidth" value="5" min="2" max="30">
+      </label>
+      <label>Высота (узлов)
+        <input type="number" id="setHeight" value="4" min="2" max="30">
+      </label>
+    </div>
+    <label>Количество этажей
+      <input type="number" id="setFloors" value="3" min="1" max="20">
+    </label>
+
+    <div class="section-title">Для каждого этажа: % покрытия рёбрами</div>
+    <div id="edgeSettings"></div>
+
+    <div class="section-title">Для каждого этажа: % покрытия циклами</div>
+    <div id="cycleSettings"></div>
+
+    <div class="section-title">Для каждой пары этажей: % лестниц</div>
+    <div id="stairSettings"></div>
+
+    <label>Метрика расстояния
+      <select id="setMetric">
+        <option value="graph">Графовый (BFS)</option>
+        <option value="euclidean">Геометрический (Евклид)</option>
+        <option value="average">Усреднённый</option>
+      </select>
+    </label>
+    <label>Дистанция до финиша
+      <input type="number" id="setDistance" value="5" min="1" max="999">
+    </label>
+
+    <button class="btn" id="btnGenerate">Сгенерировать</button>
+  </aside>
+
+  <div class="right-area">
+    <div class="nav-hint" id="navHint">Используйте колесико мыши для навигации между этажами</div>
+
+    <div class="game-field-wrap">
+      <div class="game-field" id="gameField">
+        <pre id="mazeOutput"></pre>
+      </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel">
+      <div class="info-item"><span class="info-label">Узлы:</span><span class="info-value" id="infoNodes">—</span></div>
+      <div class="info-item"><span class="info-label">Рёбра:</span><span class="info-value" id="infoEdges">—</span></div>
+      <div class="info-item"><span class="info-label">Этажи:</span><span class="info-value" id="infoFloors">—</span></div>
+      <div class="info-item"><span class="info-label">Старт:</span><span class="info-value" id="infoStart">—</span></div>
+      <div class="info-item"><span class="info-label">Финиш:</span><span class="info-value" id="infoFinish">—</span></div>
+      <div class="info-item"><span class="info-label">Расстояние:</span><span class="info-value" id="infoDist">—</span></div>
+      <div class="info-item"><span class="info-label">Метрика:</span><span class="info-value" id="infoMetric">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   BROKEN_MAZE — Этап 1: Математика и Генерация
+   ================================================================ */
+
+const DIR_DX = [ 1,  1,  0, -1, -1,  0];
+const DIR_DY = [ 0, -1, -1,  0,  1,  1];
+const DIR_OPP = [ 3,  4,  5,  0,  1,  2];
+
+class Node {
+  constructor(x, y, floor) {
+    this.x = x; this.y = y; this.floor = floor;
+    this.edges = new Uint8Array(6);
+    this.stairsUp = false;
+    this.stairsDown = false;
+    this.isStart = false;
+    this.isFinish = false;
+  }
+  key() { return `${this.x},${this.y},${this.floor}`; }
+  hasEdge(d) { return this.edges[d] === 1; }
+  addEdge(d) { this.edges[d] = 1; }
+  removeEdge(d) { this.edges[d] = 0; }
+  edgeCount() { let c = 0; for (let i = 0; i < 6; i++) c += this.edges[i]; return c; }
+}
+
+class Maze {
+  constructor(w, h, floors) {
+    this.w = w; this.h = h; this.floors = floors;
+    this.grid = [];
+    for (let f = 0; f < floors; f++) {
+      this.grid[f] = [];
+      for (let y = 0; y < h; y++) {
+        this.grid[f][y] = [];
+        for (let x = 0; x < w; x++) {
+          this.grid[f][y][x] = new Node(x, y, f);
+        }
+      }
+    }
+    this.startNode = null;
+    this.finishNode = null;
+  }
+
+  node(x, y, f) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h || f < 0 || f >= this.floors) return null;
+    return this.grid[f][y][x];
+  }
+
+  neighbor(n, d) {
+    return this.node(n.x + DIR_DX[d], n.y + DIR_DY[d], n.floor);
+  }
+
+  allPossibleEdges(f) {
+    const edges = [];
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const n = this.grid[f][y][x];
+        for (const d of [0, 1, 2]) {
+          const nb = this.neighbor(n, d);
+          if (nb) edges.push([n, nb, d, DIR_OPP[d]]);
+        }
+      }
+    }
+    return edges;
+  }
+
+  generateSpanningTree(f) {
+    const visited = new Set();
+    const stack = [];
+    const startX = Math.floor(Math.random() * this.w);
+    const startY = Math.floor(Math.random() * this.h);
+    const start = this.grid[f][startY][startX];
+    stack.push(start);
+    visited.add(start.key());
+
+    while (stack.length > 0) {
+      const cur = stack[stack.length - 1];
+      const dirs = [0, 1, 2, 3, 4, 5];
+      for (let i = dirs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+      }
+      let found = false;
+      for (const d of dirs) {
+        const nb = this.neighbor(cur, d);
+        if (nb && !visited.has(nb.key())) {
+          cur.addEdge(d);
+          nb.addEdge(DIR_OPP[d]);
+          visited.add(nb.key());
+          stack.push(nb);
+          found = true;
+          break;
+        }
+      }
+      if (!found) stack.pop();
+    }
+  }
+
+  addEdgesToTarget(f, targetPercent) {
+    const allEdges = this.allPossibleEdges(f);
+    const existing = allEdges.filter(([a, , d]) => a.hasEdge(d));
+    const nonExisting = allEdges.filter(([a, , d]) => !a.hasEdge(d));
+
+    const targetCount = Math.round(allEdges.length * targetPercent / 100);
+    const toAdd = Math.max(0, targetCount - existing.length);
+
+    for (let i = nonExisting.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [nonExisting[i], nonExisting[j]] = [nonExisting[j], nonExisting[i]];
+    }
+
+    for (let i = 0; i < toAdd && i < nonExisting.length; i++) {
+      const [a, b, d, od] = nonExisting[i];
+      a.addEdge(d);
+      b.addEdge(od);
+    }
+  }
+
+  addCycles(f, percent) {
+    const allEdges = this.allPossibleEdges(f);
+    const nonExisting = allEdges.filter(([a, , d]) => !a.hasEdge(d));
+    const count = Math.round(nonExisting.length * percent / 100);
+
+    for (let i = nonExisting.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [nonExisting[i], nonExisting[j]] = [nonExisting[j], nonExisting[i]];
+    }
+
+    for (let i = 0; i < count && i < nonExisting.length; i++) {
+      const [a, b, d, od] = nonExisting[i];
+      a.addEdge(d);
+      b.addEdge(od);
+    }
+  }
+
+  addStairs(f1, f2, percent) {
+    const positions = [];
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const n1 = this.node(x, y, f1);
+        const n2 = this.node(x, y, f2);
+        if (n1.edgeCount() > 0 && n2.edgeCount() > 0) {
+          positions.push([n1, n2]);
+        }
+      }
+    }
+    const count = Math.round(positions.length * percent / 100);
+
+    for (let i = positions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [positions[i], positions[j]] = [positions[j], positions[i]];
+    }
+
+    for (let i = 0; i < count && i < positions.length; i++) {
+      const [n1, n2] = positions[i];
+      n1.stairsUp = true;
+      n2.stairsDown = true;
+    }
+  }
+
+  isGloballyConnected() {
+    const totalNodes = this.w * this.h * this.floors;
+    const start = this.grid[0][0][0];
+    const visited = new Set();
+    const queue = [start];
+    visited.add(start.key());
+    let head = 0;
+
+    while (head < queue.length) {
+      const cur = queue[head++];
+      for (let d = 0; d < 6; d++) {
+        if (!cur.hasEdge(d)) continue;
+        const nb = this.neighbor(cur, d);
+        if (nb && !visited.has(nb.key())) {
+          visited.add(nb.key());
+          queue.push(nb);
+        }
+      }
+      if (cur.stairsUp) {
+        const up = this.node(cur.x, cur.y, cur.floor + 1);
+        if (up && !visited.has(up.key())) { visited.add(up.key()); queue.push(up); }
+      }
+      if (cur.stairsDown) {
+        const dn = this.node(cur.x, cur.y, cur.floor - 1);
+        if (dn && !visited.has(dn.key())) { visited.add(dn.key()); queue.push(dn); }
+      }
+    }
+    return visited.size === totalNodes;
+  }
+
+  removeAndReplaceEdges() {
+    for (let f = 0; f < this.floors; f++) {
+      const allEdges = this.allPossibleEdges(f);
+      const maxAttempts = Math.min(allEdges.length, 20);
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const existing = allEdges.filter(([a, , d]) => a.hasEdge(d));
+        if (existing.length <= this.w * this.h - 1) break;
+
+        const idx = Math.floor(Math.random() * existing.length);
+        const [a, b, d, od] = existing[idx];
+
+        a.removeEdge(d);
+        b.removeEdge(od);
+
+        if (this.isGloballyConnected()) {
+          const nonExisting = allEdges.filter(([na, , nd]) => !na.hasEdge(nd));
+          if (nonExisting.length > 0) {
+            const newIdx = Math.floor(Math.random() * nonExisting.length);
+            const [na, nb, nd, nod] = nonExisting[newIdx];
+            na.addEdge(nd);
+            nb.addEdge(nod);
+          }
+        } else {
+          a.addEdge(d);
+          b.addEdge(od);
+        }
+      }
+    }
+  }
+
+  bfs(start) {
+    const dist = new Map();
+    dist.set(start.key(), 0);
+    const queue = [start];
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const d = dist.get(cur.key());
+      for (let dir = 0; dir < 6; dir++) {
+        if (!cur.hasEdge(dir)) continue;
+        const nb = this.neighbor(cur, dir);
+        if (nb && !dist.has(nb.key())) {
+          dist.set(nb.key(), d + 1);
+          queue.push(nb);
+        }
+      }
+      if (cur.stairsUp) {
+        const up = this.node(cur.x, cur.y, cur.floor + 1);
+        if (up && !dist.has(up.key())) { dist.set(up.key(), d + 1); queue.push(up); }
+      }
+      if (cur.stairsDown) {
+        const dn = this.node(cur.x, cur.y, cur.floor - 1);
+        if (dn && !dist.has(dn.key())) { dist.set(dn.key(), d + 1); queue.push(dn); }
+      }
+    }
+    return dist;
+  }
+
+  euclidean3D(a, b) {
+    const px1 = a.x + a.y * 0.5, py1 = a.y * Math.sqrt(3) / 2;
+    const px2 = b.x + b.y * 0.5, py2 = b.y * Math.sqrt(3) / 2;
+    const dz = a.floor - b.floor;
+    return Math.sqrt((px1 - px2) ** 2 + (py1 - py2) ** 2 + dz * dz);
+  }
+
+  getDistance(a, b, metric, bfsDist) {
+    const gDist = bfsDist.get(b.key());
+    if (gDist === undefined) return Infinity;
+    if (metric === 'graph') return gDist;
+    const eDist = this.euclidean3D(a, b);
+    if (metric === 'euclidean') return eDist;
+    return (gDist + eDist) / 2;
+  }
+
+  placeStartFinish(metric, targetDist) {
+    const allNodes = [];
+    for (let f = 0; f < this.floors; f++)
+      for (let y = 0; y < this.h; y++)
+        for (let x = 0; x < this.w; x++)
+          allNodes.push(this.grid[f][y][x]);
+
+    const startIdx = Math.floor(Math.random() * allNodes.length);
+    const start = allNodes[startIdx];
+    start.isStart = true;
+    this.startNode = start;
+
+    const bfsDist = this.bfs(start);
+
+    let candidates = [];
+    let bestDist = -1;
+    let bestCandidates = [];
+
+    for (const n of allNodes) {
+      if (n === start) continue;
+      const d = this.getDistance(start, n, metric, bfsDist);
+      if (d === Infinity) continue;
+
+      if (metric === 'graph') {
+        if (d === targetDist) candidates.push(n);
+        if (d > bestDist) { bestDist = d; bestCandidates = [n]; }
+        else if (d === bestDist) bestCandidates.push(n);
+      } else {
+        candidates.push({ node: n, d });
+      }
+    }
+
+    let finish;
+    if (metric === 'graph') {
+      if (candidates.length > 0) {
+        finish = candidates[Math.floor(Math.random() * candidates.length)];
+      } else {
+        finish = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
+      }
+    } else {
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => Math.abs(a.d - targetDist) - Math.abs(b.d - targetDist));
+        const topN = Math.max(1, Math.floor(candidates.length * 0.1));
+        finish = candidates[Math.floor(Math.random() * topN)].node;
+      } else {
+        finish = allNodes.find(n => n !== start) || start;
+      }
+    }
+
+    finish.isFinish = true;
+    this.finishNode = finish;
+    this._bfsDist = bfsDist;
+  }
+
+  stats() {
+    let nodes = 0, hEdges = 0, vEdges = 0;
+    for (let f = 0; f < this.floors; f++)
+      for (let y = 0; y < this.h; y++)
+        for (let x = 0; x < this.w; x++) {
+          nodes++;
+          const n = this.grid[f][y][x];
+          hEdges += n.hasEdge(0) + n.hasEdge(1) + n.hasEdge(2);
+          if (n.stairsUp) vEdges++;
+        }
+    return { nodes, hEdges, vEdges, totalEdges: hEdges + vEdges };
+  }
+}
+
+function renderFloorASCII(maze, floor) {
+  const { w, h } = maze;
+  const lines = [];
+
+  lines.push(`===Этаж ${floor}===`);
+
+  for (let y = 0; y < h; y++) {
+    const indent = (y % 2 === 1) ? '  ' : '';
+    let nodeRow = indent;
+    for (let x = 0; x < w; x++) {
+      const n = maze.node(x, y, floor);
+      let sym;
+      if (n.isStart)       sym = 'S';
+      else if (n.isFinish) sym = 'F';
+      else if (n.stairsUp && n.stairsDown) sym = '\u2B65';
+      else if (n.stairsUp)   sym = '\u2191';
+      else if (n.stairsDown) sym = '\u2193';
+      else                   sym = '\u25CF';
+
+      nodeRow += sym;
+      if (x < w - 1) {
+        nodeRow += n.hasEdge(0) ? ' - ' : '   ';
+      }
+    }
+    lines.push(nodeRow);
+
+    if (y < h - 1) {
+      let diagRow = '';
+      for (let x = 0; x < w; x++) {
+        const n = maze.node(x, y, floor);
+
+        if (y % 2 === 0) {
+          diagRow += n.hasEdge(5) ? '\\' : ' ';
+          if (x < w - 1) {
+            const nR = maze.node(x + 1, y, floor);
+            diagRow += (nR && nR.hasEdge(4)) ? ' / ' : '   ';
+          }
+        } else {
+          diagRow += n.hasEdge(5) ? '/' : ' ';
+          if (x < w - 1) {
+            const nR = maze.node(x + 1, y, floor);
+            diagRow += (nR && nR.hasEdge(4)) ? ' \\ ' : '   ';
+          }
+        }
+      }
+      lines.push(diagRow);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+let currentMaze = null;
+let currentFloor = 0;
+const $ = id => document.getElementById(id);
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('broken_maze_settings'));
+    if (saved) {
+      $('setWidth').value = saved.w || 5;
+      $('setHeight').value = saved.h || 4;
+      $('setFloors').value = saved.floors || 3;
+      $('setMetric').value = saved.metric || 'graph';
+      $('setDistance').value = saved.dist || 5;
+    }
+  } catch(e) {}
+}
+
+function saveSettings() {
+  const floors = parseInt($('setFloors').value) || 1;
+  const settings = {
+    w: parseInt($('setWidth').value),
+    h: parseInt($('setHeight').value),
+    floors: floors,
+    metric: $('setMetric').value,
+    dist: parseInt($('setDistance').value),
+    edgePcts: [],
+    cyclePcts: [],
+    stairPcts: []
+  };
+  for (let f = 0; f < floors; f++) {
+    settings.edgePcts.push(parseInt($(`edge_${f}`)?.value) || 50);
+    settings.cyclePcts.push(parseInt($(`cycle_${f}`)?.value) || 15);
+  }
+  for (let f = 0; f < floors - 1; f++) {
+    settings.stairPcts.push(parseInt($(`stair_${f}`)?.value) || 20);
+  }
+  localStorage.setItem('broken_maze_settings', JSON.stringify(settings));
+}
+
+function loadFloorSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('broken_maze_settings'));
+    if (!saved) return;
+    const floors = parseInt($('setFloors').value) || 1;
+    for (let f = 0; f < floors; f++) {
+      const edgeEl = $(`edge_${f}`);
+      const cycleEl = $(`cycle_${f}`);
+      if (edgeEl && saved.edgePcts && saved.edgePcts[f] !== undefined) edgeEl.value = saved.edgePcts[f];
+      if (cycleEl && saved.cyclePcts && saved.cyclePcts[f] !== undefined) cycleEl.value = saved.cyclePcts[f];
+    }
+    for (let f = 0; f < floors - 1; f++) {
+      const stairEl = $(`stair_${f}`);
+      if (stairEl && saved.stairPcts && saved.stairPcts[f] !== undefined) stairEl.value = saved.stairPcts[f];
+    }
+  } catch(e) {}
+}
+
+function buildDynamicSettings() {
+  const floors = parseInt($('setFloors').value) || 1;
+
+  const edgeDiv = $('edgeSettings');
+  edgeDiv.innerHTML = '';
+  for (let f = 0; f < floors; f++) {
+    const row = document.createElement('div');
+    row.className = 'floor-setting';
+    row.innerHTML = `<span>Этаж ${f}:</span>`;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = 50;
+    inp.id = `edge_${f}`;
+    const span = document.createElement('span');
+    span.textContent = ' %';
+    row.appendChild(inp);
+    row.appendChild(span);
+    edgeDiv.appendChild(row);
+  }
+
+  const cycleDiv = $('cycleSettings');
+  cycleDiv.innerHTML = '';
+  for (let f = 0; f < floors; f++) {
+    const row = document.createElement('div');
+    row.className = 'floor-setting';
+    row.innerHTML = `<span>Этаж ${f}:</span>`;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = 15;
+    inp.id = `cycle_${f}`;
+    const span = document.createElement('span');
+    span.textContent = ' %';
+    row.appendChild(inp);
+    row.appendChild(span);
+    cycleDiv.appendChild(row);
+  }
+
+  const stairDiv = $('stairSettings');
+  stairDiv.innerHTML = '';
+  for (let f = 0; f < floors - 1; f++) {
+    const row = document.createElement('div');
+    row.className = 'floor-setting';
+    row.innerHTML = `<span>${f}↔${f + 1}:</span>`;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = 20;
+    inp.id = `stair_${f}`;
+    const span = document.createElement('span');
+    span.textContent = ' %';
+    row.appendChild(inp);
+    row.appendChild(span);
+    stairDiv.appendChild(row);
+  }
+
+  loadFloorSettings();
+}
+
+function generate() {
+  const w = Math.max(2, parseInt($('setWidth').value) || 5);
+  const h = Math.max(2, parseInt($('setHeight').value) || 4);
+  const floors = Math.max(1, parseInt($('setFloors').value) || 1);
+  const metric = $('setMetric').value;
+  const dist = Math.max(1, parseInt($('setDistance').value) || 5);
+
+  const maze = new Maze(w, h, floors);
+
+  for (let f = 0; f < floors; f++) maze.generateSpanningTree(f);
+
+  for (let f = 0; f < floors; f++) {
+    const edgePct = parseInt($(`edge_${f}`)?.value) || 50;
+    maze.addEdgesToTarget(f, edgePct);
+  }
+
+  for (let f = 0; f < floors; f++) {
+    const cyclePct = parseInt($(`cycle_${f}`)?.value) || 0;
+    maze.addCycles(f, cyclePct);
+  }
+
+  for (let f = 0; f < floors - 1; f++) {
+    const pct = parseInt($(`stair_${f}`)?.value) || 0;
+    maze.addStairs(f, f + 1, pct);
+  }
+
+  maze.removeAndReplaceEdges();
+
+  maze.placeStartFinish(metric, dist);
+
+  currentMaze = maze;
+  currentFloor = 0;
+  saveSettings();
+  updateView();
+}
+
+function updateView() {
+  if (!currentMaze) return;
+  const m = currentMaze;
+  currentFloor = Math.max(0, Math.min(m.floors - 1, currentFloor));
+
+  $('mazeOutput').textContent = renderFloorASCII(m, currentFloor);
+  $('navHint').style.display = m.floors > 1 ? '' : 'none';
+
+  const st = m.stats();
+  $('infoNodes').textContent = st.nodes;
+  $('infoEdges').textContent = `${st.totalEdges} (гориз: ${st.hEdges}, лестн: ${st.vEdges})`;
+  $('infoFloors').textContent = m.floors;
+  $('infoStart').textContent = m.startNode ? `(${m.startNode.x}, ${m.startNode.y}, эт. ${m.startNode.floor})` : '—';
+  $('infoFinish').textContent = m.finishNode ? `(${m.finishNode.x}, ${m.finishNode.y}, эт. ${m.finishNode.floor})` : '—';
+
+  const metricNames = { graph: 'Графовый', euclidean: 'Евклидов', average: 'Усреднённый' };
+  $('infoMetric').textContent = metricNames[$('setMetric').value] || '';
+
+  if (m.startNode && m.finishNode && m._bfsDist) {
+    const metric = $('setMetric').value;
+    const d = m.getDistance(m.startNode, m.finishNode, metric, m._bfsDist);
+    $('infoDist').textContent = d === Infinity ? '∞' : (metric === 'graph' ? d : d.toFixed(2));
+  } else {
+    $('infoDist').textContent = '—';
+  }
+}
+
+$('gameField').addEventListener('wheel', e => {
+  if (!currentMaze || currentMaze.floors <= 1) return;
+  e.preventDefault();
+  if (e.deltaY < 0) currentFloor++;
+  else currentFloor--;
+  updateView();
+}, { passive: false });
+
+$('setFloors').addEventListener('input', buildDynamicSettings);
+$('btnGenerate').addEventListener('click', generate);
+
+loadSettings();
+buildDynamicSettings();
+generate();
+</script>
+</body>
+</html>

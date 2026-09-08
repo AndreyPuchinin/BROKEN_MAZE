@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BROKEN_MAZE — Этап 1</title>
+<style>
+  /* ───── Общие ───── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #1a1a2e; color: #e0e0e0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  /* ───── Шапка ───── */
+  header {
+    background: #16213e; padding: 10px 20px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  header h1 { font-size: 18px; color: #e94560; white-space: nowrap; }
+
+  /* ───── Основной layout ───── */
+  .main-wrap {
+    display: flex; flex: 1; overflow: hidden;
+  }
+
+  /* ───── Панель настроек ───── */
+  .settings-panel {
+    width: 320px; min-width: 280px;
+    background: #16213e; border-right: 1px solid #0f3460;
+    overflow-y: auto; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .settings-panel h2 { font-size: 15px; color: #e94560; border-bottom: 1px solid #0f3460; padding-bottom: 4px; }
+  .settings-panel label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+  .settings-panel input[type=number],
+  .settings-panel select {
+    background: #0f3460; color: #e0e0e0; border: 1px solid #533483;
+    border-radius: 4px; padding: 4px 6px; font-size: 13px; width: 100%;
+  }
+  .settings-panel input[type=number] { width: 80px; }
+  .setting-row { display: flex; gap: 8px; align-items: center; }
+  .setting-row label { flex: 1; }
+  .btn {
+    background: #e94560; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 14px; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .btn:hover { background: #c73652; }
+  .section-title { font-size: 13px; color: #a8a8b3; margin-top: 6px; }
+
+  /* ───── Правая часть ───── */
+  .right-area {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ───── Надпись навигации ───── */
+  .nav-hint {
+    background: #0f3460; text-align: center; padding: 6px;
+    font-size: 13px; color: #a8a8b3; border-bottom: 1px solid #533483;
+  }
+
+  /* ───── Поле игры ───── */
+  .game-field-wrap {
+    flex: 1; display: flex; justify-content: center; align-items: center;
+    overflow: hidden; padding: 12px;
+  }
+  .game-field {
+    max-width: 100%; max-height: 100%;
+    overflow: auto; background: #0a0a1a;
+    border: 1px solid #533483; border-radius: 6px;
+    padding: 10px; position: relative;
+  }
+  .game-field pre {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 16px; line-height: 1.15;
+    margin: 0; white-space: pre;
+    color: #00ff88;
+  }
+  .floor-label {
+    text-align: center; font-size: 14px; color: #e94560;
+    margin-bottom: 6px; font-weight: 600;
+  }
+
+  /* ───── Информационная панель ───── */
+  .info-panel {
+    background: #16213e; border-top: 1px solid #0f3460;
+    padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px 24px;
+    font-size: 13px;
+  }
+  .info-panel .info-item { display: flex; gap: 6px; }
+  .info-panel .info-label { color: #a8a8b3; }
+  .info-panel .info-value { color: #00ff88; font-weight: 600; }
+
+  /* ───── Скроллбар ───── */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #0a0a1a; }
+  ::-webkit-scrollbar-thumb { background: #533483; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #e94560; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BROKEN_MAZE — Этап 1</h1>
+</header>
+
+<div class="main-wrap">
+
+  <!-- ═══ Панель настроек ═══ -->
+  <aside class="settings-panel" id="settingsPanel">
+    <h2>⚙ Настройки уровня</h2>
+
+    <div class="setting-row">
+      <label>Ширина (узлов)
+        <input type="number" id="setWidth" value="5" min="2" max="30">
+      </label>
+      <label>Высота (узлов)
+        <input type="number" id="setHeight" value="4" min="2" max="30">
+      </label>
+    </div>
+    <label>Количество этажей
+      <input type="number" id="setFloors" value="3" min="1" max="20">
+    </label>
+
+    <div class="section-title">Для каждого этажа: % циклов (доп. рёбра)</div>
+    <div id="cycleSettings"></div>
+
+    <div class="section-title">Для каждой пары этажей: % лестниц</div>
+    <div id="stairSettings"></div>
+
+    <label>Метрика расстояния
+      <select id="setMetric">
+        <option value="graph">Графовый (BFS)</option>
+        <option value="euclidean">Геометрический (Евклид)</option>
+        <option value="average">Усреднённый</option>
+      </select>
+    </label>
+    <label>Дистанция до финиша
+      <input type="number" id="setDistance" value="5" min="1" max="999">
+    </label>
+
+    <button class="btn" id="btnGenerate">Сгенерировать</button>
+  </aside>
+
+  <!-- ═══ Правая часть ═══ -->
+  <div class="right-area">
+    <div class="nav-hint" id="navHint">Используйте колесико мыши для навигации между этажами</div>
+
+    <div class="game-field-wrap">
+      <div class="game-field" id="gameField">
+        <div class="floor-label" id="floorLabel"></div>
+        <pre id="mazeOutput"></pre>
+      </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel">
+      <div class="info-item"><span class="info-label">Узлы:</span><span class="info-value" id="infoNodes">—</span></div>
+      <div class="info-item"><span class="info-label">Рёбра:</span><span class="info-value" id="infoEdges">—</span></div>
+      <div class="info-item"><span class="info-label">Этажи:</span><span class="info-value" id="infoFloors">—</span></div>
+      <div class="info-item"><span class="info-label">Старт:</span><span class="info-value" id="infoStart">—</span></div>
+      <div class="info-item"><span class="info-label">Финиш:</span><span class="info-value" id="infoFinish">—</span></div>
+      <div class="info-item"><span class="info-label">Расстояние:</span><span class="info-value" id="infoDist">—</span></div>
+      <div class="info-item"><span class="info-label">Метрика:</span><span class="info-value" id="infoMetric">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   BROKEN_MAZE  —  Этап 1: Математика и Генерация
+   ================================================================ */
+
+// ──────── Направления ────────
+// 0:E  1:NE  2:NW  3:W  4:SW  5:SE
+const DIR_DX = [ 1,  1,  0, -1, -1,  0];
+const DIR_DY = [ 0, -1, -1,  0,  1,  1];
+const DIR_OPP = [ 3,  4,  5,  0,  1,  2];
+
+// ──────── Узел ────────
+class Node {
+  constructor(x, y, floor) {
+    this.x = x; this.y = y; this.floor = floor;
+    this.edges = new Uint8Array(6);   // 0 или 1 для каждого из 6 направлений
+    this.stairsUp = false;
+    this.stairsDown = false;
+    this.isStart = false;
+    this.isFinish = false;
+  }
+  key() { return `${this.x},${this.y},${this.floor}`; }
+  hasEdge(d) { return this.edges[d] === 1; }
+  addEdge(d) { this.edges[d] = 1; }
+  removeEdge(d) { this.edges[d] = 0; }
+  edgeCount() { let c = 0; for (let i = 0; i < 6; i++) c += this.edges[i]; return c; }
+}
+
+// ──────── Лабиринт ────────
+class Maze {
+  constructor(w, h, floors) {
+    this.w = w; this.h = h; this.floors = floors;
+    this.grid = [];  // grid[floor][y][x]
+    for (let f = 0; f < floors; f++) {
+      this.grid[f] = [];
+      for (let y = 0; y < h; y++) {
+        this.grid[f][y] = [];
+        for (let x = 0; x < w; x++) {
+          this.grid[f][y][x] = new Node(x, y, f);
+        }
+      }
+    }
+    this.startNode = null;
+    this.finishNode = null;
+  }
+
+  node(x, y, f) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h || f < 0 || f >= this.floors) return null;
+    return this.grid[f][y][x];
+  }
+
+  // Сосед в направлении d на том же этаже
+  neighbor(n, d) {
+    return this.node(n.x + DIR_DX[d], n.y + DIR_DY[d], n.floor);
+  }
+
+  // Все возможные горизонтальные рёбра на этаже (каждое один раз)
+  allPossibleEdges(f) {
+    const edges = [];
+    for (let y = 0; y < this.h; y++)
+      for (let x = 0; x < this.w; x++) {
+        const n = this.grid[f][y][x];
+        // Проверяем только направления 0(E), 1(NE), 5(SE) чтобы не дублировать
+        for (const d of [0, 1, 5]) {
+          const nb = this.neighbor(n, d);
+          if (nb) edges.push([n, nb, d, DIR_OPP[d]]);
+        }
+      }
+    return edges;
+  }
+
+  // ── Остовное дерево (DFS с рандомизацией) ──
+  generateSpanningTree(f) {
+    const visited = new Set();
+    const stack = [];
+    const startX = Math.floor(Math.random() * this.w);
+    const startY = Math.floor(Math.random() * this.h);
+    const start = this.grid[f][startY][startX];
+    stack.push(start);
+    visited.add(start.key());
+
+    while (stack.length > 0) {
+      const cur = stack[stack.length - 1];
+      // Перемешиваем направления
+      const dirs = [0, 1, 2, 3, 4, 5];
+      for (let i = dirs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+      }
+      let found = false;
+      for (const d of dirs) {
+        const nb = this.neighbor(cur, d);
+        if (nb && !visited.has(nb.key())) {
+          cur.addEdge(d);
+          nb.addEdge(DIR_OPP[d]);
+          visited.add(nb.key());
+          stack.push(nb);
+          found = true;
+          break;
+        }
+      }
+      if (!found) stack.pop();
+    }
+  }
+
+  // ── Добавление циклов ──
+  addCycles(f, percent) {
+    const allEdges = this.allPossibleEdges(f);
+    // Фильтруем только те, которых ещё нет
+    const available = allEdges.filter(([a, b, d, od]) => !a.hasEdge(d));
+    const count = Math.round(available.length * percent / 100);
+    // Перемешиваем
+    for (let i = available.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [available[i], available[j]] = [available[j], available[i]];
+    }
+    for (let i = 0; i < count && i < available.length; i++) {
+      const [a, b, d, od] = available[i];
+      a.addEdge(d);
+      b.addEdge(od);
+    }
+  }
+
+  // ── Добавление лестниц ──
+  addStairs(f1, f2, percent) {
+    // Все позиции (x,y) которые существуют на обоих этажах
+    const positions = [];
+    for (let y = 0; y < this.h; y++)
+      for (let x = 0; x < this.w; x++) {
+        const n1 = this.node(x, y, f1);
+        const n2 = this.node(x, y, f2);
+        // Лестница только если оба узла имеют хотя бы одно горизонтальное ребро
+        if (n1.edgeCount() > 0 && n2.edgeCount() > 0) {
+          positions.push([n1, n2]);
+        }
+      }
+    const count = Math.round(positions.length * percent / 100);
+    for (let i = positions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [positions[i], positions[j]] = [positions[j], positions[i]];
+    }
+    for (let i = 0; i < count && i < positions.length; i++) {
+      const [n1, n2] = positions[i];
+      n1.stairsUp = true;
+      n2.stairsDown = true;
+    }
+  }
+
+  // ── BFS по всему графу (включая лестницы) ──
+  bfs(start) {
+    const dist = new Map();
+    dist.set(start.key(), 0);
+    const queue = [start];
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const d = dist.get(cur.key());
+      // Горизонтальные соседи
+      for (let dir = 0; dir < 6; dir++) {
+        if (!cur.hasEdge(dir)) continue;
+        const nb = this.neighbor(cur, dir);
+        if (nb && !dist.has(nb.key())) {
+          dist.set(nb.key(), d + 1);
+          queue.push(nb);
+        }
+      }
+      // Лестницы
+      if (cur.stairsUp) {
+        const up = this.node(cur.x, cur.y, cur.floor + 1);
+        if (up && !dist.has(up.key())) { dist.set(up.key(), d + 1); queue.push(up); }
+      }
+      if (cur.stairsDown) {
+        const dn = this.node(cur.x, cur.y, cur.floor - 1);
+        if (dn && !dist.has(dn.key())) { dist.set(dn.key(), d + 1); queue.push(dn); }
+      }
+    }
+    return dist;
+  }
+
+  // ── Расстояния ──
+  euclidean3D(a, b) {
+    // Реальные координаты в triangular grid:
+    // px = x + y * 0.5,  py = y * sqrt(3)/2
+    const px1 = a.x + a.y * 0.5, py1 = a.y * Math.sqrt(3) / 2;
+    const px2 = b.x + b.y * 0.5, py2 = b.y * Math.sqrt(3) / 2;
+    const dz = a.floor - b.floor;
+    return Math.sqrt((px1 - px2) ** 2 + (py1 - py2) ** 2 + dz * dz);
+  }
+
+  getDistance(a, b, metric, bfsDist) {
+    const gDist = bfsDist.get(b.key());
+    if (gDist === undefined) return Infinity;
+    if (metric === 'graph') return gDist;
+    const eDist = this.euclidean3D(a, b);
+    if (metric === 'euclidean') return eDist;
+    return (gDist + eDist) / 2;  // average
+  }
+
+  // ── Размещение старта и финиша ──
+  placeStartFinish(metric, targetDist) {
+    // Собираем все узлы
+    const allNodes = [];
+    for (let f = 0; f < this.floors; f++)
+      for (let y = 0; y < this.h; y++)
+        for (let x = 0; x < this.w; x++)
+          allNodes.push(this.grid[f][y][x]);
+
+    // Случайный старт
+    const startIdx = Math.floor(Math.random() * allNodes.length);
+    const start = allNodes[startIdx];
+    start.isStart = true;
+    this.startNode = start;
+
+    // BFS от старта
+    const bfsDist = this.bfs(start);
+
+    // Ищем финиш по метрике
+    let candidates = [];
+    let bestDist = -1;
+    let bestCandidates = [];
+
+    for (const n of allNodes) {
+      if (n === start) continue;
+      const d = this.getDistance(start, n, metric, bfsDist);
+      if (d === Infinity) continue;
+
+      // Для графовой — точное совпадение
+      if (metric === 'graph') {
+        if (d === targetDist) candidates.push(n);
+        if (d > bestDist) { bestDist = d; bestCandidates = [n]; }
+        else if (d === bestDist) bestCandidates.push(n);
+      } else {
+        // Для вещественных метрик — ищем ближайшую к target
+        candidates.push({ node: n, d });
+      }
+    }
+
+    let finish;
+    if (metric === 'graph') {
+      if (candidates.length > 0) {
+        finish = candidates[Math.floor(Math.random() * candidates.length)];
+      } else {
+        // Берём максимально далёкий
+        finish = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
+      }
+    } else {
+      if (candidates.length > 0) {
+        // Сортируем по близости к target
+        candidates.sort((a, b) => Math.abs(a.d - targetDist) - Math.abs(b.d - targetDist));
+        // Берём из топ-10% или первого
+        const topN = Math.max(1, Math.floor(candidates.length * 0.1));
+        const pick = candidates[Math.floor(Math.random() * topN)];
+        finish = pick.node;
+      } else {
+        finish = allNodes.find(n => n !== start) || start;
+      }
+    }
+
+    finish.isFinish = true;
+    this.finishNode = finish;
+    this._bfsDist = bfsDist;
+  }
+
+  // ── Статистика ──
+  stats() {
+    let nodes = 0, hEdges = 0, vEdges = 0;
+    for (let f = 0; f < this.floors; f++)
+      for (let y = 0; y < this.h; y++)
+        for (let x = 0; x < this.w; x++) {
+          nodes++;
+          const n = this.grid[f][y][x];
+          // Считаем рёбра только в направлениях E, NE, SE чтобы не дублировать
+          hEdges += n.hasEdge(0) + n.hasEdge(1) + n.hasEdge(5);
+          if (n.stairsUp) vEdges++;
+        }
+    return { nodes, hEdges, vEdges, totalEdges: hEdges + vEdges };
+  }
+}
+
+// ──────── ASCII-Рендер ────────
+function renderFloorASCII(maze, floor) {
+  const { w, h } = maze;
+  const OFFSET = 2;
+  const totalCols = (w - 1) * 4 + (h - 1) * 2 + OFFSET + 5;
+  const totalRows = h * 2 - 1;
+
+  // Буфер
+  const buf = [];
+  for (let r = 0; r < totalRows; r++) {
+    buf[r] = new Array(totalCols).fill(' ');
+  }
+
+  function setChar(col, row, ch) {
+    if (row >= 0 && row < totalRows && col >= 0 && col < totalCols) {
+      buf[row][col] = ch;
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const col = x * 4 + y * 2 + OFFSET;
+      const row = y * 2;
+      const n = maze.node(x, y, floor);
+
+      // Символ узла
+      let sym;
+      if (n.isStart)       sym = 'S';
+      else if (n.isFinish) sym = 'F';
+      else if (n.stairsUp && n.stairsDown) sym = '\u2B65';  // ⭥
+      else if (n.stairsUp)   sym = '\u2191';  // ↑
+      else if (n.stairsDown) sym = '\u2193';  // ↓
+      else                   sym = '\u25CF';  // ●
+
+      setChar(col, row, sym);
+
+      // Горизонтальное ребро E
+      if (n.hasEdge(0)) {
+        setChar(col + 2, row, '-');
+      }
+
+      // Диагональные рёбра (рисуем только «вниз» чтобы не дублировать)
+      if (y < h - 1) {
+        if (n.hasEdge(5)) { // SE → '\'
+          setChar(col + 1, row + 1, '\\');
+        }
+        if (n.hasEdge(4)) { // SW → '/'
+          setChar(col - 1, row + 1, '/');
+        }
+      }
+    }
+  }
+
+  // Обрезаем trailing пробелы в каждой строке для аккуратности
+  return buf.map(r => r.join('').replace(/\s+$/, '')).join('\n');
+}
+
+// ──────── UI ────────
+let currentMaze = null;
+let currentFloor = 0;
+
+const $ = id => document.getElementById(id);
+
+function buildDynamicSettings() {
+  const floors = parseInt($('setFloors').value) || 1;
+
+  // Циклы
+  const cycleDiv = $('cycleSettings');
+  cycleDiv.innerHTML = '';
+  for (let f = 0; f < floors; f++) {
+    const lbl = document.createElement('label');
+    lbl.textContent = `Этаж ${f}: `;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = 15;
+    inp.id = `cycle_${f}`; inp.style.width = '60px';
+    lbl.appendChild(inp);
+    const span = document.createElement('span'); span.textContent = ' %';
+    lbl.appendChild(span);
+    cycleDiv.appendChild(lbl);
+  }
+
+  // Лестницы
+  const stairDiv = $('stairSettings');
+  stairDiv.innerHTML = '';
+  for (let f = 0; f < floors - 1; f++) {
+    const lbl = document.createElement('label');
+    lbl.textContent = `${f}↔${f + 1}: `;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = 20;
+    inp.id = `stair_${f}`; inp.style.width = '60px';
+    lbl.appendChild(inp);
+    const span = document.createElement('span'); span.textContent = ' %';
+    lbl.appendChild(span);
+    stairDiv.appendChild(lbl);
+  }
+}
+
+function generate() {
+  const w = Math.max(2, parseInt($('setWidth').value) || 5);
+  const h = Math.max(2, parseInt($('setHeight').value) || 4);
+  const floors = Math.max(1, parseInt($('setFloors').value) || 1);
+  const metric = $('setMetric').value;
+  const dist = Math.max(1, parseInt($('setDistance').value) || 5);
+
+  const maze = new Maze(w, h, floors);
+
+  // 1) Остовные деревья
+  for (let f = 0; f < floors; f++) maze.generateSpanningTree(f);
+
+  // 2) Циклы
+  for (let f = 0; f < floors; f++) {
+    const pct = parseInt($(`cycle_${f}`)?.value) || 0;
+    maze.addCycles(f, pct);
+  }
+
+  // 3) Лестницы
+  for (let f = 0; f < floors - 1; f++) {
+    const pct = parseInt($(`stair_${f}`)?.value) || 0;
+    maze.addStairs(f, f + 1, pct);
+  }
+
+  // 4) Старт и Финиш
+  maze.placeStartFinish(metric, dist);
+
+  currentMaze = maze;
+  currentFloor = 0;
+  updateView();
+}
+
+function updateView() {
+  if (!currentMaze) return;
+  const m = currentMaze;
+
+  // Ограничиваем этаж
+  currentFloor = Math.max(0, Math.min(m.floors - 1, currentFloor));
+
+  // Рендер
+  $('floorLabel').textContent = `Этаж ${currentFloor} из ${m.floors - 1}`;
+  $('mazeOutput').textContent = renderFloorASCII(m, currentFloor);
+
+  // Навигационная надпись
+  $('navHint').style.display = m.floors > 1 ? '' : 'none';
+
+  // Информация
+  const st = m.stats();
+  $('infoNodes').textContent = st.nodes;
+  $('infoEdges').textContent = `${st.totalEdges} (гориз: ${st.hEdges}, лестн: ${st.vEdges})`;
+  $('infoFloors').textContent = m.floors;
+  $('infoStart').textContent = m.startNode ? `(${m.startNode.x}, ${m.startNode.y}, этаж ${m.startNode.floor})` : '—';
+  $('infoFinish').textContent = m.finishNode ? `(${m.finishNode.x}, ${m.finishNode.y}, этаж ${m.finishNode.floor})` : '—';
+
+  const metric = $('setMetric').value;
+  const metricNames = { graph: 'Графовый', euclidean: 'Евклидов', average: 'Усреднённый' };
+  $('infoMetric').textContent = metricNames[metric] || metric;
+
+  if (m.startNode && m.finishNode && m._bfsDist) {
+    const d = m.getDistance(m.startNode, m.finishNode, metric, m._bfsDist);
+    $('infoDist').textContent = d === Infinity ? '∞' : (metric === 'graph' ? d : d.toFixed(2));
+  } else {
+    $('infoDist').textContent = '—';
+  }
+}
+
+// ── Колесико мыши ──
+$('gameField').addEventListener('wheel', e => {
+  if (!currentMaze || currentMaze.floors <= 1) return;
+  e.preventDefault();
+  if (e.deltaY < 0) currentFloor++;
+  else currentFloor--;
+  updateView();
+}, { passive: false });
+
+// ── Динамическая перестройка настроек при изменении этажей ──
+$('setFloors').addEventListener('input', buildDynamicSettings);
+
+// ── Кнопка генерации ──
+$('btnGenerate').addEventListener('click', generate);
+
+// ── Инициализация ──
+buildDynamicSettings();
+generate();
+</script>
+</body>
+</html>

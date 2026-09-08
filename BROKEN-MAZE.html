@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BROKEN-MAZE: Backend Debug</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        canvas {
+            background-color: #222;
+            border: 2px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* UI Elements */
+        .gear-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 32px;
+            cursor: pointer;
+            color: #aaa;
+            transition: color 0.3s, transform 0.3s;
+            user-select: none;
+            z-index: 10;
+        }
+        .gear-btn:hover {
+            color: #fff;
+            transform: rotate(90deg);
+        }
+
+        .settings-panel {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            width: 300px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .settings-panel.active { display: flex; }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .setting-group label {
+            font-size: 14px;
+            color: #ccc;
+        }
+        .setting-group input, .setting-group select {
+            padding: 8px;
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .btn-generate {
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn-generate:hover { background: #45a049; }
+
+        .debug-status {
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+            margin-top: 5px;
+        }
+        .debug-status.active { color: #ff9800; font-weight: bold; }
+
+        /* HUD */
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+            z-index: 5;
+        }
+        .hud span { color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <canvas id="mazeCanvas"></canvas>
+
+    <div class="hud" id="hud">
+        Размер сетки: <span id="hudSize">-</span><br>
+        Узлов: <span id="hudNodes">-</span> | Ребер: <span id="hudEdges">-</span><br>
+        Покрытие: <span id="hudCoverage">-</span>%<br>
+        Путь до финиша: <span id="hudDist">-</span>
+    </div>
+
+    <div class="gear-btn" id="gearBtn">⚙️</div>
+
+    <div class="settings-panel" id="settingsPanel">
+        <h3 style="margin:0; text-align:center; color:#fff;">Настройки генерации</h3>
+        
+        <div class="setting-group">
+            <label>Ширина поля (узлов):</label>
+            <input type="number" id="setWidth" value="10" min="3" max="30">
+        </div>
+        <div class="setting-group">
+            <label>Высота поля (узлов):</label>
+            <input type="number" id="setHeight" value="10" min="3" max="30">
+        </div>
+        
+        <div class="setting-group">
+            <label>Метрика расстояния до финиша:</label>
+            <select id="setMetric">
+                <option value="min">Минимальный путь (граф)</option>
+                <option value="geo">Геометрический (евклидов)</option>
+                <option value="avg">Усредненный (граф + гео)</option>
+            </select>
+        </div>
+
+        <div class="setting-group">
+            <label>Мин. дистанция до финиша:</label>
+            <input type="number" id="setMinDist" value="5" min="1">
+        </div>
+
+        <div class="setting-group">
+            <label>Наличие циклов:</label>
+            <select id="setCycles">
+                <option value="0">Без циклов (Идеальный лабиринт)</option>
+                <option value="1" selected>С циклами</option>
+            </select>
+        </div>
+
+        <div class="setting-group">
+            <label>% покрытия ребрами (если с циклами):</label>
+            <input type="range" id="setCoverage" min="0" max="100" value="30">
+            <span id="coverageVal" style="text-align:center; font-size:12px;">30%</span>
+        </div>
+
+        <div class="setting-group">
+            <label>Читкод отладки:</label>
+            <input type="text" id="setDebugCode" placeholder="Введите код...">
+        </div>
+
+        <button class="btn-generate" id="btnGenerate">СГЕНЕРИРОВАТЬ</button>
+        
+        <div class="debug-status" id="debugStatus">Режим отладки: ВЫКЛ</div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. МАТЕМАТИКА ТРЕУГОЛЬНОЙ СЕТКИ
+        // ==========================================
+        class TriangularGrid {
+            constructor(width, height) {
+                this.width = width;
+                this.height = height;
+                this.nodes = new Map(); // key: "x,y", value: {x, y, neighbors: []}
+                this.edges = new Set(); // key: "x1,y1-x2,y2"
+                this.generateNodes();
+            }
+
+            generateNodes() {
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        const key = `${x},${y}`;
+                        this.nodes.set(key, { x, y, neighbors: [] });
+                    }
+                }
+                this.connectNodes();
+            }
+
+            connectNodes() {
+                // Соседи в треугольной сетке (6 направлений)
+                // Базисные векторы: (1, 0) и (0.5, sqrt(3)/2)
+                // В дискретных координатах (i, j) соседи:
+                const directions = [
+                    [1, 0], [-1, 0],
+                    [0, 1], [0, -1],
+                    [1, -1], [-1, 1]
+                ];
+
+                for (let [key, node] of this.nodes) {
+                    for (let [dx, dy] of directions) {
+                        const nx = node.x + dx;
+                        const ny = node.y + dy;
+                        const nKey = `${nx},${ny}`;
+                        if (this.nodes.has(nKey)) {
+                            node.neighbors.push(nKey);
+                            // Добавляем ребро (сортируем ключи для уникальности)
+                            const edgeKey = key < nKey ? `${key}-${nKey}` : `${nKey}-${key}`;
+                            this.edges.add(edgeKey);
+                        }
+                    }
+                }
+            }
+
+            // Преобразование координат сетки в пиксели для рендера
+            getPixelCoords(x, y, cellSize, offsetX, offsetY) {
+                // Используем реальную геометрию треугольной решетки
+                const px = offsetX + (x + y * 0.5) * cellSize;
+                const py = offsetY + (y * Math.sqrt(3) / 2) * cellSize;
+                return { px, py };
+            }
+        }
+
+        // ==========================================
+        // 2. ГЕНЕРАТОР ЛАБИРИНТА
+        // ==========================================
+        class MazeGenerator {
+            constructor(grid, settings) {
+                this.grid = grid;
+                this.settings = settings;
+                this.activeEdges = new Set(); // Ребра, по которым можно ходить
+                this.walls = new Set(); // Ребра-стены
+                this.startNode = null;
+                this.finishNode = null;
+                this.pathToFinish = [];
+            }
+
+            generate() {
+                this.activeEdges.clear();
+                this.walls.clear();
+
+                // 1. Строим остовное дерево (Spanning Tree) через алгоритм Прима
+                // Это гарантирует связность и отсутствие циклов на первом этапе
+                this.generateSpanningTree();
+
+                // 2. Добавляем циклы, если нужно, чтобы достичь % покрытия
+                if (this.settings.cycles) {
+                    this.addCycles();
+                }
+
+                // 3. Выбираем Старт и Финиш
+                this.placeStartAndFinish();
+
+                // 4. Считаем путь до финиша
+                this.calculatePath();
+            }
+
+            generateSpanningTree() {
+                const nodes = Array.from(this.grid.nodes.keys());
+                const visited = new Set();
+                const startKey = nodes[Math.floor(Math.random() * nodes.length)];
+                
+                visited.add(startKey);
+                const frontier = [];
+
+                // Добавляем все ребра стартового узла в фронт
+                for (let neighbor of this.grid.nodes.get(startKey).neighbors) {
+                    const edgeKey = startKey < neighbor ? `${startKey}-${neighbor}` : `${neighbor}-${startKey}`;
+                    frontier.push({ edge: edgeKey, from: startKey, to: neighbor });
+                }
+
+                while (frontier.length > 0) {
+                    const randIdx = Math.floor(Math.random() * frontier.length);
+                    const { edge, from, to } = frontier.splice(randIdx, 1)[0];
+
+                    if (!visited.has(to)) {
+                        visited.add(to);
+                        this.activeEdges.add(edge);
+
+                        // Добавляем новые ребра в фронт
+                        for (let neighbor of this.grid.nodes.get(to).neighbors) {
+                            if (!visited.has(neighbor)) {
+                                const eKey = to < neighbor ? `${to}-${neighbor}` : `${neighbor}-${to}`;
+                                frontier.push({ edge: eKey, from: to, to: neighbor });
+                            }
+                        }
+                    }
+                }
+
+                // Все неактивные ребра становятся стенами
+                for (let edge of this.grid.edges) {
+                    if (!this.activeEdges.has(edge)) {
+                        this.walls.add(edge);
+                    }
+                }
+            }
+
+            addCycles() {
+                const wallsArray = Array.from(this.walls);
+                const totalEdges = this.grid.edges.size;
+                const treeEdges = this.activeEdges.size;
+                
+                // Целевое количество активных ребер
+                const targetActive = Math.floor(totalEdges * (this.settings.coverage / 100));
+                const edgesToAdd = Math.max(0, targetActive - treeEdges);
+
+                // Перемешиваем стены и добавляем первые N
+                for (let i = wallsArray.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [wallsArray[i], wallsArray[j]] = [wallsArray[j], wallsArray[i]];
+                }
+
+                for (let i = 0; i < edgesToAdd && i < wallsArray.length; i++) {
+                    const edge = wallsArray[i];
+                    this.activeEdges.add(edge);
+                    this.walls.delete(edge);
+                }
+            }
+
+            placeStartAndFinish() {
+                const nodes = Array.from(this.grid.nodes.keys());
+                
+                // Старт - случайный узел
+                this.startNode = nodes[Math.floor(Math.random() * nodes.length)];
+
+                // Ищем узел для финиша по заданной метрике
+                let bestNode = null;
+                let bestDist = -1;
+
+                const minReqDist = this.settings.minDist;
+
+                for (let nodeKey of nodes) {
+                    if (nodeKey === this.startNode) continue;
+                    
+                    const dist = this.getDistance(this.startNode, nodeKey);
+                    
+                    if (dist >= minReqDist && dist > bestDist) {
+                        bestDist = dist;
+                        bestNode = nodeKey;
+                    }
+                }
+
+                // Если не нашли достаточно далеко, берем самый дальний из доступных
+                if (!bestNode) {
+                    for (let nodeKey of nodes) {
+                        if (nodeKey === this.startNode) continue;
+                        const dist = this.getDistance(this.startNode, nodeKey);
+                        if (dist > bestDist) {
+                            bestDist = dist;
+                            bestNode = nodeKey;
+                        }
+                    }
+                }
+
+                this.finishNode = bestNode;
+            }
+
+            getDistance(fromKey, toKey) {
+                const fromNode = this.grid.nodes.get(fromKey);
+                const toNode = this.grid.nodes.get(toKey);
+
+                if (this.settings.metric === 'geo') {
+                    // Геометрическое (евклидово) расстояние
+                    const dx = (toNode.x - fromNode.x) + (toNode.y - fromNode.y) * 0.5;
+                    const dy = (toNode.y - fromNode.y) * Math.sqrt(3) / 2;
+                    return Math.sqrt(dx * dx + dy * dy);
+                } 
+                else if (this.settings.metric === 'avg') {
+                    // Усредненное: (Графовое + Геометрическое) / 2
+                    const graphDist = this.bfsDistance(fromKey, toKey);
+                    const dx = (toNode.x - fromNode.x) + (toNode.y - fromNode.y) * 0.5;
+                    const dy = (toNode.y - fromNode.y) * Math.sqrt(3) / 2;
+                    const geoDist = Math.sqrt(dx * dx + dy * dy);
+                    return (graphDist + geoDist) / 2;
+                } 
+                else {
+                    // Минимальный путь (графовый)
+                    return this.bfsDistance(fromKey, toKey);
+                }
+            }
+
+            bfsDistance(fromKey, toKey) {
+                if (fromKey === toKey) return 0;
+                const queue = [[fromKey, 0]];
+                const visited = new Set([fromKey]);
+
+                while (queue.length > 0) {
+                    const [current, dist] = queue.shift();
+                    if (current === toKey) return dist;
+
+                    for (let neighbor of this.grid.nodes.get(current).neighbors) {
+                        if (!visited.has(neighbor)) {
+                            const edgeKey = current < neighbor ? `${current}-${neighbor}` : `${neighbor}-${current}`;
+                            if (this.activeEdges.has(edgeKey)) {
+                                visited.add(neighbor);
+                                queue.push([neighbor, dist + 1]);
+                            }
+                        }
+                    }
+                }
+                return Infinity; // Недостижимо (не должно случиться из-за остовного дерева)
+            }
+
+            calculatePath() {
+                // Восстанавливаем кратчайший путь для отладки
+                const queue = [[this.startNode, [this.startNode]]];
+                const visited = new Set([this.startNode]);
+
+                while (queue.length > 0) {
+                    const [current, path] = queue.shift();
+                    if (current === this.finishNode) {
+                        this.pathToFinish = path;
+                        return;
+                    }
+
+                    for (let neighbor of this.grid.nodes.get(current).neighbors) {
+                        if (!visited.has(neighbor)) {
+                            const edgeKey = current < neighbor ? `${current}-${neighbor}` : `${neighbor}-${current}`;
+                            if (this.activeEdges.has(edgeKey)) {
+                                visited.add(neighbor);
+                                queue.push([neighbor, [...path, neighbor]]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 3. РЕНДЕР И UI
+        // ==========================================
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let grid, maze;
+        let debugMode = false;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth * 0.9;
+            canvas.height = window.innerHeight * 0.9;
+            if (grid) render();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function initMaze() {
+            const w = parseInt(document.getElementById('setWidth').value);
+            const h = parseInt(document.getElementById('setHeight').value);
+            const metric = document.getElementById('setMetric').value;
+            const minDist = parseInt(document.getElementById('setMinDist').value);
+            const cycles = document.getElementById('setCycles').value === '1';
+            const coverage = parseInt(document.getElementById('setCoverage').value);
+
+            grid = new TriangularGrid(w, h);
+            
+            const settings = { metric, minDist, cycles, coverage };
+            maze = new MazeGenerator(grid, settings);
+            maze.generate();
+
+            updateHUD();
+            render();
+        }
+
+        function updateHUD() {
+            document.getElementById('hudSize').textContent = `${grid.width}x${grid.height}`;
+            document.getElementById('hudNodes').textContent = grid.nodes.size;
+            document.getElementById('hudEdges').textContent = maze.activeEdges.size;
+            
+            const totalEdges = grid.edges.size;
+            const cov = ((maze.activeEdges.size / totalEdges) * 100).toFixed(1);
+            document.getElementById('hudCoverage').textContent = cov;
+
+            const dist = maze.getDistance(maze.startNode, maze.finishNode);
+            document.getElementById('hudDist').textContent = dist.toFixed(2);
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Расчет масштаба и отступов
+            const cellSize = Math.min(
+                canvas.width / (grid.width + grid.height * 0.5 + 2),
+                canvas.height / (grid.height * Math.sqrt(3) / 2 + 2)
+            );
+            
+            const offsetX = (canvas.width - (grid.width + grid.height * 0.5) * cellSize) / 2;
+            const offsetY = (canvas.height - (grid.height * Math.sqrt(3) / 2) * cellSize) / 2;
+
+            // Рисуем стены (серым цветом)
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 2;
+            for (let edge of maze.walls) {
+                const [n1, n2] = edge.split('-');
+                const [x1, y1] = n1.split(',').map(Number);
+                const [x2, y2] = n2.split(',').map(Number);
+                const p1 = grid.getPixelCoords(x1, y1, cellSize, offsetX, offsetY);
+                const p2 = grid.getPixelCoords(x2, y2, cellSize, offsetX, offsetY);
+                
+                ctx.beginPath();
+                ctx.moveTo(p1.px, p1.py);
+                ctx.lineTo(p2.px, p2.py);
+                ctx.stroke();
+            }
+
+            // Рисуем коридоры (активные ребра)
+            ctx.strokeStyle = '#aaa';
+            ctx.lineWidth = 4;
+            for (let edge of maze.activeEdges) {
+                const [n1, n2] = edge.split('-');
+                const [x1, y1] = n1.split(',').map(Number);
+                const [x2, y2] = n2.split(',').map(Number);
+                const p1 = grid.getPixelCoords(x1, y1, cellSize, offsetX, offsetY);
+                const p2 = grid.getPixelCoords(x2, y2, cellSize, offsetX, offsetY);
+                
+                ctx.beginPath();
+                ctx.moveTo(p1.px, p1.py);
+                ctx.lineTo(p2.px, p2.py);
+                ctx.stroke();
+            }
+
+            // РЕЖИМ ОТЛАДКИ
+            if (debugMode) {
+                // Рисуем все узлы
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                for (let [key, node] of grid.nodes) {
+                    const p = grid.getPixelCoords(node.x, node.y, cellSize, offsetX, offsetY);
+                    ctx.beginPath();
+                    ctx.arc(p.px, p.py, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Рисуем путь до финиша
+                if (maze.pathToFinish.length > 1) {
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 6;
+                    ctx.setLineDash([10, 5]);
+                    ctx.beginPath();
+                    for (let i = 0; i < maze.pathToFinish.length; i++) {
+                        const [x, y] = maze.pathToFinish[i].split(',').map(Number);
+                        const p = grid.getPixelCoords(x, y, cellSize, offsetX, offsetY);
+                        if (i === 0) ctx.moveTo(p.px, p.py);
+                        else ctx.lineTo(p.px, p.py);
+                    }
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // Рисуем Старт и Финиш
+            const drawMarker = (key, color, label) => {
+                const [x, y] = key.split(',').map(Number);
+                const p = grid.getPixelCoords(x, y, cellSize, offsetX, offsetY);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(p.px, p.py, cellSize * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${cellSize * 0.4}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, p.px, p.py);
+            };
+
+            drawMarker(maze.startNode, '#2196F3', 'S');
+            drawMarker(maze.finishNode, '#F44336', 'F');
+        }
+
+        // ==========================================
+        // 4. ОБРАБОТКА UI
+        // ==========================================
+        const gearBtn = document.getElementById('gearBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const btnGenerate = document.getElementById('btnGenerate');
+        const coverageSlider = document.getElementById('setCoverage');
+        const coverageVal = document.getElementById('coverageVal');
+        const debugCodeInput = document.getElementById('setDebugCode');
+        const debugStatus = document.getElementById('debugStatus');
+
+        gearBtn.addEventListener('click', () => {
+            settingsPanel.classList.toggle('active');
+        });
+
+        coverageSlider.addEventListener('input', (e) => {
+            coverageVal.textContent = e.target.value + '%';
+        });
+
+        btnGenerate.addEventListener('click', () => {
+            initMaze();
+        });
+
+        debugCodeInput.addEventListener('input', (e) => {
+            if (e.target.value === 'ANDY_KYBIIK_DEBUGGER') {
+                debugMode = true;
+                debugStatus.textContent = 'Режим отладки: ВКЛ (ANDY_KYBIIK_DEBUGGER)';
+                debugStatus.classList.add('active');
+            } else {
+                debugMode = false;
+                debugStatus.textContent = 'Режим отладки: ВЫКЛ';
+                debugStatus.classList.remove('active');
+            }
+            if(grid) render();
+        });
+
+        // Инициализация при загрузке
+        initMaze();
+
+    </script>
+</body>
+</html>

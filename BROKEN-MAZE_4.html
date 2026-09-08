@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BROKEN-MAZE - Этап 1</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #game-field {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 350px;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #maze-display {
+            background: #000;
+            border: 2px solid #00ff00;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            line-height: 1.2;
+            white-space: pre;
+            overflow: auto;
+            max-width: 100%;
+            max-height: 80vh;
+        }
+
+        #floor-indicator {
+            margin-bottom: 10px;
+            font-size: 18px;
+            color: #ffff00;
+        }
+
+        #stats-panel {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #00ffff;
+        }
+
+        #settings-panel {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 350px;
+            height: 100vh;
+            background: #2a2a2a;
+            border-left: 2px solid #00ff00;
+            padding: 20px;
+            overflow-y: auto;
+            transition: transform 0.3s;
+        }
+
+        #settings-panel.collapsed {
+            transform: translateX(350px);
+        }
+
+        #toggle-settings {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 20px;
+            z-index: 100;
+        }
+
+        #toggle-settings.collapsed {
+            right: 10px;
+        }
+
+        .setting-group {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #444;
+        }
+
+        .setting-group h3 {
+            color: #ff00ff;
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin: 5px 0;
+            color: #fff;
+        }
+
+        input[type="number"], input[type="text"], select {
+            width: 100%;
+            padding: 5px;
+            background: #1a1a1a;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: inherit;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #00ff00;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        button:hover {
+            background: #00cc00;
+        }
+
+        .dynamic-field {
+            margin: 10px 0;
+            padding: 5px;
+            background: #1a1a1a;
+        }
+
+        #debug-code {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px dashed #ff0000;
+        }
+    </style>
+</head>
+<body>
+    <button id="toggle-settings">⚙️</button>
+
+    <div id="game-field">
+        <div id="floor-indicator">Нажмите "Сгенерировать" для создания лабиринта</div>
+        <div id="maze-display"></div>
+        <div id="stats-panel"></div>
+    </div>
+
+    <div id="settings-panel">
+        <h2 style="color: #ff00ff; margin-bottom: 20px;">Настройки</h2>
+
+        <div class="setting-group">
+            <h3>Общие параметры</h3>
+            <label>Ширина: <input type="number" id="width" value="5" min="3" max="20"></label>
+            <label>Длина: <input type="number" id="length" value="5" min="3" max="20"></label>
+            <label>Количество этажей: <input type="number" id="floors" value="1" min="1" max="10"></label>
+            <label>Метрика расстояния:
+                <select id="metric">
+                    <option value="graph">Графовая (BFS)</option>
+                    <option value="euclidean">Евклидова</option>
+                    <option value="average">Усреднённая</option>
+                </select>
+            </label>
+            <label>Ровно N ходов до финиша: <input type="number" id="exact-distance" value="10" min="1"></label>
+        </div>
+
+        <div id="floor-settings">
+            <!-- Динамически генерируемые поля для этажей -->
+        </div>
+
+        <div id="stair-settings">
+            <!-- Динамически генерируемые поля для лестниц -->
+        </div>
+
+        <button id="generate-btn">Сгенерировать лабиринт</button>
+        <button id="console-btn">Вывести в консоль</button>
+
+        <div id="debug-code">
+            <h3>Режим отладки</h3>
+            <label>Введите читкод: <input type="text" id="debug-input" placeholder="ANDY_KYBIK_DEBUGGER"></label>
+        </div>
+    </div>
+
+    <script>
+        // Класс треугольного лабиринта
+        class TriangularMaze {
+            constructor(config) {
+                this.width = config.width;
+                this.length = config.length;
+                this.floors = config.floors;
+                this.metric = config.metric;
+                this.exactDistance = config.exactDistance;
+                this.floorEdges = config.floorEdges || {};
+                this.floorCycles = config.floorCycles || {};
+                this.stairCoverage = config.stairCoverage || {};
+                
+                this.nodes = [];
+                this.edges = [];
+                this.start = null;
+                this.finish = null;
+                this.currentFloor = 0;
+            }
+
+            generate() {
+                // Инициализация узлов
+                for (let f = 0; f < this.floors; f++) {
+                    this.nodes[f] = [];
+                    for (let y = 0; y < this.length; y++) {
+                        this.nodes[f][y] = [];
+                        for (let x = 0; x < this.width; x++) {
+                            this.nodes[f][y][x] = {
+                                x, y, floor: f,
+                                edges: [],
+                                hasStairsUp: false,
+                                hasStairsDown: false
+                            };
+                        }
+                    }
+                }
+
+                // Генерация остовного дерева для каждого этажа (алгоритм Прима)
+                for (let f = 0; f < this.floors; f++) {
+                    this.generateSpanningTree(f);
+                }
+
+                // Добавление циклов
+                for (let f = 0; f < this.floors; f++) {
+                    this.addCycles(f);
+                }
+
+                // Добавление лестниц
+                for (let f = 0; f < this.floors - 1; f++) {
+                    this.addStairs(f);
+                }
+
+                // Размещение старта и финиша
+                this.placeStartAndFinish();
+
+                return this;
+            }
+
+            generateSpanningTree(floor) {
+                const visited = new Set();
+                const queue = [];
+                
+                // Начинаем с случайного узла
+                const startX = Math.floor(Math.random() * this.width);
+                const startY = Math.floor(Math.random() * this.length);
+                visited.add(`${startX},${startY}`);
+                queue.push([startX, startY]);
+
+                const directions = [
+                    [1, 0], [-1, 0], [0, 1], [0, -1],
+                    [1, 1], [-1, -1]
+                ];
+
+                while (queue.length > 0) {
+                    const [x, y] = queue.shift();
+                    const neighbors = [];
+
+                    for (const [dx, dy] of directions) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.length) {
+                            if (!visited.has(`${nx},${ny}`)) {
+                                neighbors.push([nx, ny]);
+                            }
+                        }
+                    }
+
+                    if (neighbors.length > 0) {
+                        const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        this.addEdge(floor, x, y, nx, ny);
+                        visited.add(`${nx},${ny}`);
+                        queue.push([nx, ny]);
+                    }
+                }
+            }
+
+            addEdge(floor, x1, y1, x2, y2) {
+                const edge = { floor, x1, y1, x2, y2 };
+                this.edges.push(edge);
+                this.nodes[floor][y1][x1].edges.push(edge);
+                this.nodes[floor][y2][x2].edges.push(edge);
+            }
+
+            addCycles(floor) {
+                const coverage = this.floorCycles[floor] || 0;
+                const totalPossibleEdges = this.countPossibleEdges(floor);
+                const edgesToAdd = Math.floor((coverage / 100) * totalPossibleEdges);
+
+                for (let i = 0; i < edgesToAdd; i++) {
+                    const x1 = Math.floor(Math.random() * this.width);
+                    const y1 = Math.floor(Math.random() * this.length);
+                    const directions = [[1, 0], [0, 1], [1, 1], [-1, -1]];
+                    const [dx, dy] = directions[Math.floor(Math.random() * directions.length)];
+                    const x2 = x1 + dx;
+                    const y2 = y1 + dy;
+
+                    if (x2 >= 0 && x2 < this.width && y2 >= 0 && y2 < this.length) {
+                        if (!this.hasEdge(floor, x1, y1, x2, y2)) {
+                            this.addEdge(floor, x1, y1, x2, y2);
+                        }
+                    }
+                }
+            }
+
+            addStairs(floor) {
+                const coverage = this.stairCoverage[floor] || 0;
+                const totalNodes = this.width * this.length;
+                const stairsToAdd = Math.floor((coverage / 100) * totalNodes);
+
+                for (let i = 0; i < stairsToAdd; i++) {
+                    const x = Math.floor(Math.random() * this.width);
+                    const y = Math.floor(Math.random() * this.length);
+                    this.nodes[floor][y][x].hasStairsUp = true;
+                    this.nodes[floor + 1][y][x].hasStairsDown = true;
+                }
+            }
+
+            placeStartAndFinish() {
+                // BFS для проверки связности
+                const visited = new Set();
+                const queue = [[0, 0, 0]];
+                visited.add('0,0,0');
+
+                while (queue.length > 0) {
+                    const [x, y, f] = queue.shift();
+                    const node = this.nodes[f][y][x];
+
+                    for (const edge of node.edges) {
+                        const neighbor = edge.x1 === x && edge.y1 === y && edge.floor === f ?
+                            [edge.x2, edge.y2, edge.floor] :
+                            [edge.x1, edge.y1, edge.floor];
+                        const key = neighbor.join(',');
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push(neighbor);
+                        }
+                    }
+
+                    // Проверка лестниц
+                    if (node.hasStairsUp && f < this.floors - 1) {
+                        const key = `${x},${y},${f + 1}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([x, y, f + 1]);
+                        }
+                    }
+                    if (node.hasStairsDown && f > 0) {
+                        const key = `${x},${y},${f - 1}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([x, y, f - 1]);
+                        }
+                    }
+                }
+
+                // Находим все узлы с хотя бы одним ребром
+                const validNodes = [];
+                for (let f = 0; f < this.floors; f++) {
+                    for (let y = 0; y < this.length; y++) {
+                        for (let x = 0; x < this.width; x++) {
+                            const node = this.nodes[f][y][x];
+                            if (node.edges.length > 0 && visited.has(`${x},${y},${f}`)) {
+                                validNodes.push({ x, y, floor: f });
+                            }
+                        }
+                    }
+                }
+
+                if (validNodes.length === 0) {
+                    // Если нет валидных узлов, используем любые посещенные
+                    for (let f = 0; f < this.floors; f++) {
+                        for (let y = 0; y < this.length; y++) {
+                            for (let x = 0; x < this.width; x++) {
+                                if (visited.has(`${x},${y},${f}`)) {
+                                    validNodes.push({ x, y, floor: f });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Размещение старта (первый валидный узел)
+                this.start = validNodes[0];
+
+                // Поиск финиша с точным расстоянием
+                let bestFinish = null;
+                
+                for (const node of validNodes) {
+                    const distance = this.bfsDistance(
+                        this.start.x, this.start.y, this.start.floor,
+                        node.x, node.y, node.floor
+                    );
+                    
+                    if (distance === this.exactDistance) {
+                        bestFinish = node;
+                        break;
+                    }
+                }
+
+                // Если не нашли точное расстояние, берем ближайшее
+                if (!bestFinish) {
+                    let closestDistance = Infinity;
+                    for (const node of validNodes) {
+                        const distance = this.bfsDistance(
+                            this.start.x, this.start.y, this.start.floor,
+                            node.x, node.y, node.floor
+                        );
+                        
+                        if (distance > 0 && Math.abs(distance - this.exactDistance) < closestDistance) {
+                            closestDistance = Math.abs(distance - this.exactDistance);
+                            bestFinish = node;
+                        }
+                    }
+                }
+
+                this.finish = bestFinish || validNodes[validNodes.length - 1];
+            }
+
+            bfsDistance(x1, y1, f1, x2, y2, f2) {
+                const visited = new Set();
+                const queue = [[x1, y1, f1, 0]];
+                visited.add(`${x1},${y1},${f1}`);
+
+                while (queue.length > 0) {
+                    const [x, y, f, dist] = queue.shift();
+
+                    if (x === x2 && y === y2 && f === f2) {
+                        return dist;
+                    }
+
+                    const node = this.nodes[f][y][x];
+                    for (const edge of node.edges) {
+                        const neighbor = edge.x1 === x && edge.y1 === y && edge.floor === f ?
+                            [edge.x2, edge.y2] :
+                            [edge.x1, edge.y1];
+                        const key = `${neighbor[0]},${neighbor[1]},${f}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([neighbor[0], neighbor[1], f, dist + 1]);
+                        }
+                    }
+
+                    if (node.hasStairsUp && f < this.floors - 1) {
+                        const key = `${x},${y},${f + 1}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([x, y, f + 1, dist + 1]);
+                        }
+                    }
+                    if (node.hasStairsDown && f > 0) {
+                        const key = `${x},${y},${f - 1}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([x, y, f - 1, dist + 1]);
+                        }
+                    }
+                }
+
+                return -1;
+            }
+
+            hasEdge(floor, x1, y1, x2, y2) {
+                return this.edges.some(e =>
+                    e.floor === floor &&
+                    ((e.x1 === x1 && e.y1 === y1 && e.x2 === x2 && e.y2 === y2) ||
+                     (e.x1 === x2 && e.y1 === y2 && e.x2 === x1 && e.y2 === y1))
+                );
+            }
+
+            countPossibleEdges(floor) {
+                let count = 0;
+                for (let y = 0; y < this.length; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        const directions = [[1, 0], [0, 1], [1, 1]];
+                        for (const [dx, dy] of directions) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx < this.width && ny < this.length) {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                return count;
+            }
+
+            getStats() {
+                const distance = this.bfsDistance(
+                    this.start.x, this.start.y, this.start.floor,
+                    this.finish.x, this.finish.y, this.finish.floor
+                );
+                
+                return {
+                    nodes: this.width * this.length * this.floors,
+                    edges: this.edges.length,
+                    floors: this.floors,
+                    start: this.start,
+                    finish: this.finish,
+                    distance: distance
+                };
+            }
+
+            toASCII(floor) {
+                let output = `Этаж ${floor}:\n\n`;
+                
+                for (let y = 0; y < this.length; y++) {
+                    let nodeLine = '';
+                    let edgeLine = '';
+
+                    for (let x = 0; x < this.width; x++) {
+                        const node = this.nodes[floor][y][x];
+                        
+                        // Символ узла
+                        let symbol = '●';
+                        if (this.start && this.start.x === x && this.start.y === y && this.start.floor === floor) {
+                            symbol = 'S';
+                        } else if (this.finish && this.finish.x === x && this.finish.y === y && this.finish.floor === floor) {
+                            symbol = 'F';
+                        } else if (node.hasStairsUp && node.hasStairsDown) {
+                            symbol = '⭥';
+                        } else if (node.hasStairsUp) {
+                            symbol = '↑';
+                        } else if (node.hasStairsDown) {
+                            symbol = '↓';
+                        }
+
+                        nodeLine += symbol;
+
+                        // Горизонтальное ребро (вправо)
+                        if (x < this.width - 1) {
+                            if (this.hasEdge(floor, x, y, x + 1, y)) {
+                                nodeLine += '  ';
+                            } else {
+                                nodeLine += '   ';
+                            }
+                        }
+                    }
+
+                    output += nodeLine + '\n';
+
+                    // Диагональные и вертикальные ребра
+                    if (y < this.length - 1) {
+                        for (let x = 0; x < this.width; x++) {
+                            // Проверяем три типа ребер от текущего узла
+                            if (this.hasEdge(floor, x, y, x, y + 1)) {
+                                // Вертикальное ребро вниз
+                                edgeLine += ' │ ';
+                            } else if (this.hasEdge(floor, x, y, x + 1, y + 1)) {
+                                // Диагональное ребро вправо-вниз
+                                edgeLine += ' \\ ';
+                            } else if (this.hasEdge(floor, x + 1, y, x, y + 1)) {
+                                // Диагональное ребро влево-вниз
+                                edgeLine += ' / ';
+                            } else {
+                                edgeLine += '   ';
+                            }
+                        }
+                        output += edgeLine + '\n';
+                    }
+                }
+
+                return output;
+            }
+        }
+
+        // UI Controller
+        class MazeUI {
+            constructor() {
+                this.maze = null;
+                this.currentFloor = 0;
+                this.setupEventListeners();
+                this.updateDynamicFields();
+            }
+
+            setupEventListeners() {
+                document.getElementById('toggle-settings').addEventListener('click', () => {
+                    document.getElementById('settings-panel').classList.toggle('collapsed');
+                    document.getElementById('toggle-settings').classList.toggle('collapsed');
+                });
+
+                document.getElementById('generate-btn').addEventListener('click', () => {
+                    this.generateFromUI();
+                });
+
+                document.getElementById('console-btn').addEventListener('click', () => {
+                    if (this.maze) {
+                        console.log('Лабиринт:', this.maze);
+                        console.log('Статистика:', this.maze.getStats());
+                        for (let f = 0; f < this.maze.floors; f++) {
+                            console.log(this.maze.toASCII(f));
+                        }
+                        alert('Данные выведены в консоль (F12)');
+                    }
+                });
+
+                document.getElementById('floors').addEventListener('change', () => {
+                    this.updateDynamicFields();
+                });
+
+                // Колесико мыши для переключения этажей (обратное направление)
+                document.getElementById('game-field').addEventListener('wheel', (e) => {
+                    if (this.maze) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            // Вверх - следующий этаж
+                            this.currentFloor = Math.min(this.maze.floors - 1, this.currentFloor + 1);
+                        } else {
+                            // Вниз - предыдущий этаж
+                            this.currentFloor = Math.max(0, this.currentFloor - 1);
+                        }
+                        this.renderFloor();
+                    }
+                });
+            }
+
+            updateDynamicFields() {
+                const floors = parseInt(document.getElementById('floors').value);
+                const floorSettings = document.getElementById('floor-settings');
+                const stairSettings = document.getElementById('stair-settings');
+
+                floorSettings.innerHTML = '<div class="setting-group"><h3>Настройки этажей</h3>';
+                for (let f = 0; f < floors; f++) {
+                    floorSettings.innerHTML += `
+                        <div class="dynamic-field">
+                            <label>Этаж ${f} - % рёбер: <input type="number" id="floor-edges-${f}" value="80" min="0" max="100"></label>
+                            <label>Этаж ${f} - % циклов: <input type="number" id="floor-cycles-${f}" value="20" min="0" max="100"></label>
+                        </div>
+                    `;
+                }
+                floorSettings.innerHTML += '</div>';
+
+                stairSettings.innerHTML = '<div class="setting-group"><h3>Настройки лестниц</h3>';
+                for (let f = 0; f < floors - 1; f++) {
+                    stairSettings.innerHTML += `
+                        <div class="dynamic-field">
+                            <label>Лестницы ${f}↔${f + 1}: <input type="number" id="stairs-${f}" value="10" min="0" max="100"></label>
+                        </div>
+                    `;
+                }
+                stairSettings.innerHTML += '</div>';
+            }
+
+            generateFromUI() {
+                const config = {
+                    width: parseInt(document.getElementById('width').value),
+                    length: parseInt(document.getElementById('length').value),
+                    floors: parseInt(document.getElementById('floors').value),
+                    metric: document.getElementById('metric').value,
+                    exactDistance: parseInt(document.getElementById('exact-distance').value),
+                    floorEdges: {},
+                    floorCycles: {},
+                    stairCoverage: {}
+                };
+
+                for (let f = 0; f < config.floors; f++) {
+                    config.floorEdges[f] = parseInt(document.getElementById(`floor-edges-${f}`).value);
+                    config.floorCycles[f] = parseInt(document.getElementById(`floor-cycles-${f}`).value);
+                }
+
+                for (let f = 0; f < config.floors - 1; f++) {
+                    config.stairCoverage[f] = parseInt(document.getElementById(`stairs-${f}`).value);
+                }
+
+                this.maze = new TriangularMaze(config);
+                this.maze.generate();
+                this.currentFloor = 0;
+                this.renderFloor();
+                this.updateStats();
+            }
+
+            renderFloor() {
+                if (!this.maze) return;
+
+                document.getElementById('floor-indicator').textContent = 
+                    `Этаж ${this.currentFloor} из ${this.maze.floors}`;
+                
+                document.getElementById('maze-display').textContent = 
+                    this.maze.toASCII(this.currentFloor);
+            }
+
+            updateStats() {
+                if (!this.maze) return;
+
+                const stats = this.maze.getStats();
+                document.getElementById('stats-panel').innerHTML = `
+                    <div>Узлов: ${stats.nodes}</div>
+                    <div>Рёбер: ${stats.edges}</div>
+                    <div>Этажей: ${stats.floors}</div>
+                    <div>Старт: (${stats.start.x}, ${stats.start.y}, этаж ${stats.start.floor})</div>
+                    <div>Финиш: (${stats.finish.x}, ${stats.finish.y}, этаж ${stats.finish.floor})</div>
+                    <div>Расстояние: ${stats.distance}</div>
+                `;
+            }
+        }
+
+        // Инициализация
+        const ui = new MazeUI();
+    </script>
+</body>
+</html>

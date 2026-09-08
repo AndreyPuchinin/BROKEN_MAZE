@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BROKEN-MAZE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; touch-action: none; user-select: none; }
+canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+#ui { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.85); padding: 8px 12px; display: flex; justify-content: space-around; font-size: 13px; border-top: 1px solid #333; z-index: 10; }
+.stat { text-align: center; }
+.stat-label { color: #888; font-size: 11px; }
+.stat-value { font-size: 16px; color: #0ff; font-weight: bold; }
+#menuBtn { position: fixed; top: 10px; right: 10px; z-index: 100; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #555; padding: 8px 12px; cursor: pointer; font-size: 18px; border-radius: 4px; }
+#settings { position: fixed; top: 50px; right: 10px; background: rgba(10,10,20,0.95); padding: 15px; border: 1px solid #444; border-radius: 6px; display: none; z-index: 100; min-width: 250px; }
+#settings.show { display: block; }
+.setting-row { margin: 8px 0; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.setting-row label { color: #aaa; }
+.setting-row select, .setting-row input[type=number] { background: #222; color: #fff; border: 1px solid #555; padding: 4px 8px; border-radius: 3px; width: 100px; }
+.setting-row input[type=checkbox] { width: 20px; height: 20px; }
+.btn { background: #333; color: #fff; border: 1px solid #666; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 12px; border-radius: 3px; margin: 3px; }
+.btn:hover { background: #555; }
+.btn-row { display: flex; flex-wrap: wrap; margin-top: 10px; }
+#joysticks { position: fixed; bottom: 60px; left: 0; right: 0; height: 140px; display: none; pointer-events: none; z-index: 5; }
+.joystick { position: absolute; width: 110px; height: 110px; border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; background: rgba(255,255,255,0.08); pointer-events: auto; }
+#joyLeft { left: 20px; bottom: 10px; }
+#joyRight { right: 20px; bottom: 10px; }
+.joystick-knob { position: absolute; width: 44px; height: 44px; background: rgba(0,255,255,0.4); border: 2px solid rgba(0,255,255,0.7); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%); transition: none; }
+#minimap { position: fixed; top: 10px; left: 10px; border: 1px solid #444; background: rgba(0,0,0,0.7); z-index: 10; display: none; }
+#crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; pointer-events: none; z-index: 5; }
+#crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(0,255,255,0.5); }
+#crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+#crosshair::after { width: 100%; height: 2px; top: 50%; transform: translateY(-50%); }
+#message { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 28px; color: #0ff; text-shadow: 0 0 10px #0ff; display: none; z-index: 200; text-align: center; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="crosshair"></div>
+<canvas id="minimap" width="150" height="150"></canvas>
+
+<button id="menuBtn">️</button>
+
+<div id="settings">
+    <h3 style="margin-bottom:10px; color:#0ff;">Настройки</h3>
+    <div class="setting-row"><label>Режим:</label><select id="modeSelect"><option value="left">Лево</option><option value="right">Право</option></select></div>
+    <div class="setting-row"><label>Размер:</label><input type="number" id="sizeInput" value="6" min="3" max="12"></div>
+    <div class="setting-row"><label>Циклы:</label><input type="checkbox" id="cyclesCheck"></div>
+    <div class="setting-row"><label>Покрытие %:</label><input type="number" id="coverageInput" value="100" min="50" max="100"></div>
+    <div class="setting-row"><label>Мин. дистанция:</label><input type="number" id="minDistInput" value="15" min="5" max="50"></div>
+    <div class="setting-row"><label>Мини-карта:</label><input type="checkbox" id="minimapCheck" checked></div>
+    <div class="btn-row">
+        <button class="btn" id="newGameBtn">🔄 Новая игра</button>
+        <button class="btn" id="saveBtn"> Сохранить</button>
+        <button class="btn" id="loadBtn">📂 Загрузить</button>
+    </div>
+</div>
+
+<div id="ui">
+    <div class="stat"><div class="stat-label">Ячейки</div><div class="stat-value" id="cellsStat">0</div></div>
+    <div class="stat"><div class="stat-label">Повторы</div><div class="stat-value" id="repeatStat">0%</div></div>
+    <div class="stat"><div class="stat-label">Пройдено</div><div class="stat-value" id="progressStat">0%</div></div>
+    <div class="stat"><div class="stat-label">Время</div><div class="stat-value" id="timeStat">00:00:00.000</div></div>
+</div>
+
+<div id="joysticks">
+    <div class="joystick" id="joyLeft"><div class="joystick-knob" id="knobLeft"></div></div>
+    <div class="joystick" id="joyRight"><div class="joystick-knob" id="knobRight"></div></div>
+</div>
+
+<div id="message"></div>
+
+<script>
+// ==================== КОНСТАНТЫ ====================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const minimapCanvas = document.getElementById('minimap');
+const minimapCtx = minimapCanvas.getContext('2d');
+
+const HEX_SIZE = 60;
+const SQRT3 = Math.sqrt(3);
+const FOV_VISUAL = Math.PI / 2; // 90° визуальный FOV
+const ANGLE_DISTORTION = 1.5; // визуальный = реальный × 1.5
+const MAX_RAY_DIST = HEX_SIZE * 10;
+const RAY_STEP = HEX_SIZE * 0.04;
+
+// 6 направлений гексагональной сетки (flat-top, axial coords)
+const DIRS = [
+    { dq: 1, dr: 0, angle: 0 },
+    { dq: 0, dr: 1, angle: Math.PI / 3 },
+    { dq: -1, dr: 1, angle: 2 * Math.PI / 3 },
+    { dq: -1, dr: 0, angle: Math.PI },
+    { dq: 0, dr: -1, angle: 4 * Math.PI / 3 },
+    { dq: 1, dr: -1, angle: 5 * Math.PI / 3 }
+];
+
+// ==================== УТИЛИТЫ ====================
+function hexToPixel(q, r) {
+    return {
+        x: HEX_SIZE * 1.5 * q,
+        y: HEX_SIZE * SQRT3 * (r + q / 2)
+    };
+}
+
+function pixelToHex(x, y) {
+    const q = (2/3 * x) / HEX_SIZE;
+    const r = (-1/3 * x + SQRT3/3 * y) / HEX_SIZE;
+    return hexRound(q, r);
+}
+
+function hexRound(q, r) {
+    const s = -q - r;
+    let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+    if (dq > dr && dq > ds) rq = -rr - rs;
+    else if (dr > ds) rr = -rq - rs;
+    return { q: rq, r: rr };
+}
+
+function nodeKey(q, r) { return `${q},${r}`; }
+
+function edgeKey(q1, r1, q2, r2) {
+    const a = q1 * 10000 + r1, b = q2 * 10000 + r2;
+    return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+function getNeighbor(q, r, dir) {
+    return { q: q + DIRS[dir].dq, r: r + DIRS[dir].dr };
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function randomColor() {
+    const h = Math.floor(Math.random() * 360);
+    const s = 50 + Math.floor(Math.random() * 50);
+    const l = 30 + Math.floor(Math.random() * 40);
+    return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+// ==================== ГЕНЕРАЦИЯ ЛАБИРИНТА ====================
+function generateMaze(size, allowCycles, coverage) {
+    const nodes = new Map();
+    const passages = new Set();
+    const wallColors = new Map();
+
+    // Создаём узлы в гексагональном радиусе
+    for (let q = -size; q <= size; q++) {
+        for (let r = -size; r <= size; r++) {
+            if (Math.abs(q + r) <= size) {
+                nodes.set(nodeKey(q, r), { q, r });
+            }
+        }
+    }
+
+    // Randomized DFS для создания дерева
+    const visited = new Set();
+    const stack = [{ q: 0, r: 0 }];
+    visited.add(nodeKey(0, 0));
+
+    while (stack.length > 0) {
+        const current = stack[stack.length - 1];
+        const neighbors = [];
+
+        for (let dir = 0; dir < 6; dir++) {
+            const n = getNeighbor(current.q, current.r, dir);
+            const key = nodeKey(n.q, n.r);
+            if (nodes.has(key) && !visited.has(key)) {
+                neighbors.push({ dir, node: n });
+            }
+        }
+
+        if (neighbors.length > 0) {
+            const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+            const ek = edgeKey(current.q, current.r, next.node.q, next.node.r);
+            passages.add(ek);
+            visited.add(nodeKey(next.node.q, next.node.r));
+            stack.push(next.node);
+        } else {
+            stack.pop();
+        }
+    }
+
+    // Все рёбра между соседними узлами
+    const allEdges = [];
+    for (const [key, node] of nodes) {
+        for (let dir = 0; dir < 6; dir++) {
+            const n = getNeighbor(node.q, node.r, dir);
+            const nkey = nodeKey(n.q, n.r);
+            if (nodes.has(nkey)) {
+                const ek = edgeKey(node.q, node.r, n.q, n.r);
+                if (!allEdges.find(e => e.key === ek)) {
+                    allEdges.push({ key: ek, q1: node.q, r1: node.r, q2: n.q, r2: n.r });
+                }
+            }
+        }
+    }
+
+    // Добавляем циклы если нужно
+    if (allowCycles) {
+        const nonPassageEdges = allEdges.filter(e => !passages.has(e.key));
+        const cyclesToAdd = Math.floor(nonPassageEdges.length * 0.3);
+        for (let i = 0; i < Math.min(cyclesToAdd, nonPassageEdges.length); i++) {
+            const edge = nonPassageEdges[Math.floor(Math.random() * nonPassageEdges.length)];
+            passages.add(edge.key);
+        }
+    }
+
+    // Уменьшаем покрытие если нужно
+    if (coverage < 100) {
+        const passageArray = Array.from(passages);
+        const toRemove = Math.floor(passageArray.length * (1 - coverage / 100));
+        for (let i = 0; i < toRemove; i++) {
+            const idx = Math.floor(Math.random() * passageArray.length);
+            passages.delete(passageArray[idx]);
+            passageArray.splice(idx, 1);
+        }
+    }
+
+    // Каждой стене — свой цвет
+    for (const edge of allEdges) {
+        if (!passages.has(edge.key)) {
+            wallColors.set(edge.key, randomColor());
+        }
+    }
+
+    // Находим финиш — самый дальний узел от старта
+    let finishNode = { q: 0, r: 0 };
+    let maxDist = 0;
+    const distMap = new Map();
+    distMap.set(nodeKey(0, 0), 0);
+    const queue = [{ q: 0, r: 0 }];
+    while (queue.length > 0) {
+        const curr = queue.shift();
+        const currDist = distMap.get(nodeKey(curr.q, curr.r));
+        for (let dir = 0; dir < 6; dir++) {
+            const n = getNeighbor(curr.q, curr.r, dir);
+            const nkey = nodeKey(n.q, n.r);
+            if (nodes.has(nkey) && passages.has(edgeKey(curr.q, curr.r, n.q, n.r)) && !distMap.has(nkey)) {
+                distMap.set(nkey, currDist + 1);
+                queue.push(n);
+                if (currDist + 1 > maxDist) {
+                    maxDist = currDist + 1;
+                    finishNode = n;
+                }
+            }
+        }
+    }
+
+    return { nodes, passages, wallColors, finish: finishNode, totalPassages: passages.size };
+}
+
+// ==================== RAYCASTING ====================
+function castRay(ox, oy, angle) {
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+
+    for (let dist = RAY_STEP; dist < MAX_RAY_DIST; dist += RAY_STEP) {
+        const x = ox + dx * dist;
+        const y = oy + dy * dist;
+        const hex = pixelToHex(x, y);
+        const hexKey = nodeKey(hex.q, hex.r);
+
+        if (!state.maze.nodes.has(hexKey)) continue;
+
+        // Проверяем рёбра текущего узла и соседей
+        const nodesToCheck = [hex];
+        for (let dir = 0; dir < 6; dir++) {
+            const n = getNeighbor(hex.q, hex.r, dir);
+            if (state.maze.nodes.has(nodeKey(n.q, n.r))) {
+                nodesToCheck.push(n);
+            }
+        }
+
+        for (const node of nodesToCheck) {
+            for (let dir = 0; dir < 6; dir++) {
+                const n = getNeighbor(node.q, node.r, dir);
+                const nkey = nodeKey(n.q, n.r);
+                if (!state.maze.nodes.has(nkey)) continue;
+
+                const ek = edgeKey(node.q, node.r, n.q, n.r);
+                const isWall = !state.maze.passages.has(ek);
+
+                if (isWall) {
+                    const p1 = hexToPixel(node.q, node.r);
+                    const p2 = hexToPixel(n.q, n.r);
+                    const d = distToSegment(x, y, p1.x, p1.y, p2.x, p2.y);
+
+                    if (d < HEX_SIZE * 0.35) {
+                        // Проверяем, что стена впереди (не позади)
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = (p1.y + p2.y) / 2;
+                        const toWallX = midX - ox;
+                        const toWallY = midY - oy;
+                        const dot = dx * toWallX + dy * toWallY;
+
+                        if (dot > 0) {
+                            const color = state.maze.wallColors.get(ek) || '#666';
+                            // Коррекция "рыбьего глаза"
+                            const correctedDist = dist * Math.cos(angle - state.player.realAngle);
+                            return { dist: correctedDist, color };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
+// ==================== РЕНДЕРИНГ ====================
+function render() {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Потолок и пол
+    const ceilingGrad = ctx.createLinearGradient(0, 0, 0, h / 2);
+    ceilingGrad.addColorStop(0, '#0a0a1a');
+    ceilingGrad.addColorStop(1, '#1a1a2e');
+    ctx.fillStyle = ceilingGrad;
+    ctx.fillRect(0, 0, w, h / 2);
+
+    const floorGrad = ctx.createLinearGradient(0, h / 2, 0, h);
+    floorGrad.addColorStop(0, '#1a1a2e');
+    floorGrad.addColorStop(1, '#0a0a1a');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, h / 2, w, h / 2);
+
+    const numRays = Math.floor(w / 2);
+    const playerPos = hexToPixel(state.player.q, state.player.r);
+
+    for (let i = 0; i < numRays; i++) {
+        const visualAngle = state.player.visualAngle - FOV_VISUAL / 2 + (i / numRays) * FOV_VISUAL;
+        const realAngle = visualAngle / ANGLE_DISTORTION;
+
+        const hit = castRay(playerPos.x, playerPos.y, realAngle);
+
+        const stripWidth = w / numRays + 1;
+        const stripX = (i / numRays) * w;
+
+        if (hit) {
+            const wallHeight = h / (hit.dist / HEX_SIZE + 0.15);
+            const stripY = (h - wallHeight) / 2;
+
+            // Стена
+            ctx.fillStyle = hit.color;
+            ctx.fillRect(stripX, stripY, stripWidth, wallHeight);
+
+            // Затенение по расстоянию
+            const darkness = Math.min(0.7, hit.dist / MAX_RAY_DIST);
+            ctx.fillStyle = `rgba(0,0,0,${darkness})`;
+            ctx.fillRect(stripX, stripY, stripWidth, wallHeight);
+
+            // Горизонтальные линии на стене (текстура)
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.lineWidth = 1;
+            const lineSpacing = Math.max(4, wallHeight / 8);
+            for (let ly = stripY + lineSpacing; ly < stripY + wallHeight; ly += lineSpacing) {
+                ctx.beginPath();
+                ctx.moveTo(stripX, ly);
+                ctx.lineTo(stripX + stripWidth, ly);
+                ctx.stroke();
+            }
+        }
+    }
+
+    // Рендерим мини-карту
+    if (document.getElementById('minimapCheck').checked) {
+        renderMinimap();
+    }
+}
+
+function renderMinimap() {
+    const mw = minimapCanvas.width;
+    const mh = minimapCanvas.height;
+    minimapCtx.fillStyle = 'rgba(0,0,0,0.8)';
+    minimapCtx.fillRect(0, 0, mw, mh);
+
+    const scale = 8;
+    const cx = mw / 2;
+    const cy = mh / 2;
+    const playerPos = hexToPixel(state.player.q, state.player.r);
+
+    // Рисуем узлы и рёбра
+    for (const [key, node] of state.maze.nodes) {
+        const pos = hexToPixel(node.q, node.r);
+        const sx = cx + (pos.x - playerPos.x) / HEX_SIZE * scale;
+        const sy = cy + (pos.y - playerPos.y) / HEX_SIZE * scale;
+
+        if (sx < -10 || sx > mw + 10 || sy < -10 || sy > mh + 10) continue;
+
+        // Рёбра
+        for (let dir = 0; dir < 6; dir++) {
+            const n = getNeighbor(node.q, node.r, dir);
+            const nkey = nodeKey(n.q, n.r);
+            if (!state.maze.nodes.has(nkey)) continue;
+            const ek = edgeKey(node.q, node.r, n.q, n.r);
+            const npos = hexToPixel(n.q, n.r);
+            const nsx = cx + (npos.x - playerPos.x) / HEX_SIZE * scale;
+            const nsy = cy + (npos.y - playerPos.y) / HEX_SIZE * scale;
+
+            if (state.maze.passages.has(ek)) {
+                minimapCtx.strokeStyle = '#0ff';
+                minimapCtx.lineWidth = 1;
+            } else {
+                minimapCtx.strokeStyle = '#444';
+                minimapCtx.lineWidth = 1;
+            }
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(sx, sy);
+            minimapCtx.lineTo(nsx, nsy);
+            minimapCtx.stroke();
+        }
+
+        // Узел
+        minimapCtx.fillStyle = '#888';
+        minimapCtx.fillRect(sx - 1, sy - 1, 2, 2);
+    }
+
+    // Игрок
+    minimapCtx.fillStyle = '#0f0';
+    minimapCtx.beginPath();
+    minimapCtx.arc(cx, cy, 3, 0, Math.PI * 2);
+    minimapCtx.fill();
+
+    // Направление взгляда
+    minimapCtx.strokeStyle = '#0f0';
+    minimapCtx.lineWidth = 1.5;
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(cx, cy);
+    minimapCtx.lineTo(cx + Math.cos(state.player.realAngle) * 15, cy + Math.sin(state.player.realAngle) * 15);
+    minimapCtx.stroke();
+
+    // Финиш
+    const finishPos = hexToPixel(state.maze.finish.q, state.maze.finish.r);
+    const fsx = cx + (finishPos.x - playerPos.x) / HEX_SIZE * scale;
+    const fsy = cy + (finishPos.y - playerPos.y) / HEX_SIZE * scale;
+    if (fsx > 0 && fsx < mw && fsy > 0 && fsy < mh) {
+        minimapCtx.fillStyle = '#f00';
+        minimapCtx.beginPath();
+        minimapCtx.arc(fsx, fsy, 3, 0, Math.PI * 2);
+        minimapCtx.fill();
+    }
+}
+
+// ==================== ИГРОВОЕ СОСТОЯНИЕ ====================
+const state = {
+    maze: null,
+    player: { q: 0, r: 0, visualAngle: 0, realAngle: 0 },
+    visited: new Set(),
+    totalCells: 0,
+    cells: 0,
+    repeats: 0,
+    startTime: null,
+    finished: false
+};
+
+// ==================== УПРАВЛЕНИЕ ====================
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; e.preventDefault(); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// Тач-джойстики
+let joyLeftActive = false, joyRightActive = false;
+let joyLeftValue = 0, joyRightValue = 0;
+
+function setupJoystick(joyEl, knobEl, callback) {
+    let startX, startY;
+
+    function onStart(e) {
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        const rect = joyEl.getBoundingClientRect();
+        startX = rect.left + rect.width / 2;
+        startY = rect.top + rect.height / 2;
+        callback.active = true;
+        onUpdate(e);
+    }
+
+    function onUpdate(e) {
+        if (!callback.active) return;
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        const maxDist = 40;
+        const dist = Math.min(Math.hypot(dx, dy), maxDist);
+        const angle = Math.atan2(dy, dx);
+        const nx = Math.cos(angle) * dist;
+        const ny = Math.sin(angle) * dist;
+        knobEl.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+        callback.valueX = nx / maxDist;
+        callback.valueY = ny / maxDist;
+    }
+
+    function onEnd() {
+        callback.active = false;
+        callback.valueX = 0;
+        callback.valueY = 0;
+        knobEl.style.transform = 'translate(-50%, -50%)';
+    }
+
+    joyEl.addEventListener('touchstart', onStart, { passive: false });
+    joyEl.addEventListener('touchmove', onUpdate, { passive: false });
+    joyEl.addEventListener('touchend', onEnd);
+    joyEl.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onUpdate);
+    window.addEventListener('mouseup', onEnd);
+}
+
+const joyLeftData = { active: false, valueX: 0, valueY: 0 };
+const joyRightData = { active: false, valueX: 0, valueY: 0 };
+
+// ==================== ИГРОВОЙ ЦИКЛ ====================
+let lastMoveTime = 0;
+const MOVE_DELAY = 200;
+
+function update(timestamp) {
+    if (!state.startTime) state.startTime = timestamp;
+
+    const rotSpeed = 0.04;
+    const now = timestamp;
+
+    // Поворот (правый джойстик или клавиши)
+    let rotInput = 0;
+    if (keys['arrowleft'] || keys['a']) rotInput -= 1;
+    if (keys['arrowright'] || keys['d']) rotInput += 1;
+    if (joyRightData.active) rotInput += joyRightData.valueX;
+
+    state.player.visualAngle += rotInput * rotSpeed;
+    state.player.realAngle = state.player.visualAngle / ANGLE_DISTORTION;
+
+    // Движение (левый джойстик или клавиши)
+    let moveInput = 0;
+    if (keys['arrowup'] || keys['w']) moveInput += 1;
+    if (keys['arrowdown'] || keys['s']) moveInput -= 1;
+    if (joyLeftData.active) moveInput -= joyLeftData.valueY;
+
+    if (Math.abs(moveInput) > 0.3 && now - lastMoveTime > MOVE_DELAY && !state.finished) {
+        // Определяем направление движения
+        const dir = Math.round(state.player.realAngle / (Math.PI / 3)) % 6;
+        const actualDir = dir < 0 ? dir + 6 : dir;
+
+        const n = getNeighbor(state.player.q, state.player.r, actualDir);
+        const nkey = nodeKey(n.q, n.r);
+        const ek = edgeKey(state.player.q, state.player.r, n.q, n.r);
+
+        if (state.maze.nodes.has(nkey) && state.maze.passages.has(ek)) {
+            state.player.q = n.q;
+            state.player.r = n.r;
+            state.cells++;
+
+            const pkey = nodeKey(n.q, n.r);
+            if (state.visited.has(pkey)) {
+                state.repeats++;
+            } else {
+                state.visited.add(pkey);
+            }
+
+            // Проверка финиша
+            if (n.q === state.maze.finish.q && n.r === state.maze.finish.r) {
+                state.finished = true;
+                showMessage('🏁 ФИНИШ!\nВремя: ' + document.getElementById('timeStat').textContent);
+            }
+        }
+
+        lastMoveTime = now;
+    }
+
+    // Обновление UI
+    const elapsed = now - state.startTime;
+    const hours = Math.floor(elapsed / 3600000);
+    const minutes = Math.floor((elapsed % 3600000) / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    const ms = Math.floor(elapsed % 1000);
+
+    document.getElementById('cellsStat').textContent = state.cells;
+    document.getElementById('repeatStat').textContent = state.cells > 0 ? Math.round(state.repeats / state.cells * 100) + '%' : '0%';
+    const totalNodes = state.maze.nodes.size;
+    document.getElementById('progressStat').textContent = Math.round(state.visited.size / totalNodes * 100) + '%';
+    document.getElementById('timeStat').textContent =
+        `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+
+    render();
+    requestAnimationFrame(update);
+}
+
+function showMessage(text) {
+    const msg = document.getElementById('message');
+    msg.textContent = text;
+    msg.style.display = 'block';
+    setTimeout(() => { msg.style.display = 'none'; }, 5000);
+}
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+function initGame() {
+    const size = parseInt(document.getElementById('sizeInput').value);
+    const allowCycles = document.getElementById('cyclesCheck').checked;
+    const coverage = parseInt(document.getElementById('coverageInput').value);
+
+    state.maze = generateMaze(size, allowCycles, coverage);
+    state.player = { q: 0, r: 0, visualAngle: 0, realAngle: 0 };
+    state.visited = new Set([nodeKey(0, 0)]);
+    state.cells = 1;
+    state.repeats = 0;
+    state.startTime = null;
+    state.finished = false;
+    state.totalCells = state.maze.nodes.size;
+
+    document.getElementById('message').style.display = 'none';
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+// ==================== СОХРАНЕНИЕ/ЗАГРУЗКА ====================
+function saveGame() {
+    const save = {
+        player: state.player,
+        visited: Array.from(state.visited),
+        cells: state.cells,
+        repeats: state.repeats,
+        startTime: state.startTime,
+        finished: state.finished,
+        maze: {
+            nodes: Array.from(state.maze.nodes.entries()),
+            passages: Array.from(state.maze.passages),
+            wallColors: Array.from(state.maze.wallColors.entries()),
+            finish: state.maze.finish
+        }
+    };
+    localStorage.setItem('brokenMazeSave', JSON.stringify(save));
+    showMessage(' Сохранено!');
+}
+
+function loadGame() {
+    const saveStr = localStorage.getItem('brokenMazeSave');
+    if (!saveStr) { showMessage('❌ Нет сохранения'); return; }
+    const save = JSON.parse(saveStr);
+    state.player = save.player;
+    state.visited = new Set(save.visited);
+    state.cells = save.cells;
+    state.repeats = save.repeats;
+    state.startTime = save.startTime;
+    state.finished = save.finished;
+    state.maze = {
+        nodes: new Map(save.maze.nodes),
+        passages: new Set(save.maze.passages),
+        wallColors: new Map(save.maze.wallColors),
+        finish: save.maze.finish
+    };
+    showMessage('📂 Загружено!');
+}
+
+// ==================== ОБРАБОТЧИКИ ====================
+document.getElementById('menuBtn').addEventListener('click', () => {
+    document.getElementById('settings').classList.toggle('show');
+});
+
+document.getElementById('newGameBtn').addEventListener('click', () => {
+    initGame();
+    document.getElementById('settings').classList.remove('show');
+});
+
+document.getElementById('saveBtn').addEventListener('click', saveGame);
+document.getElementById('loadBtn').addEventListener('click', loadGame);
+
+document.getElementById('minimapCheck').addEventListener('change', (e) => {
+    minimapCanvas.style.display = e.target.checked ? 'block' : 'none';
+});
+
+// Показываем джойстики на тач-устройствах
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    document.getElementById('joysticks').style.display = 'block';
+    setupJoystick(document.getElementById('joyLeft'), document.getElementById('knobLeft'), joyLeftData);
+    setupJoystick(document.getElementById('joyRight'), document.getElementById('knobRight'), joyRightData);
+}
+
+// Старт
+resize();
+window.addEventListener('resize', resize);
+minimapCanvas.style.display = document.getElementById('minimapCheck').checked ? 'block' : 'none';
+initGame();
+requestAnimationFrame(update);
+</script>
+</body>
+</html>

@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BROKEN-MAZE: Multi-Floor Debug</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        canvas {
+            background-color: #222;
+            border: 2px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        .gear-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 32px;
+            cursor: pointer;
+            color: #aaa;
+            transition: color 0.3s, transform 0.3s;
+            user-select: none;
+            z-index: 10;
+        }
+        .gear-btn:hover {
+            color: #fff;
+            transform: rotate(90deg);
+        }
+
+        .settings-panel {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            width: 340px;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .settings-panel.active { display: flex; }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .setting-group label {
+            font-size: 12px;
+            color: #ccc;
+        }
+        .setting-group input, .setting-group select {
+            padding: 6px;
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .btn-generate {
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+        .btn-generate:hover { background: #45a049; }
+
+        .debug-status {
+            font-size: 11px;
+            color: #888;
+            text-align: center;
+            margin-top: 5px;
+        }
+        .debug-status.active { color: #ff9800; font-weight: bold; }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.6;
+            z-index: 5;
+        }
+        .hud span { color: #4CAF50; font-weight: bold; }
+
+        .floor-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            z-index: 5;
+        }
+        .floor-indicator span { color: #ff9800; font-weight: bold; }
+
+        .separator {
+            border-top: 1px solid #444;
+            margin: 8px 0;
+        }
+
+        .floor-settings {
+            background: #333;
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+        .floor-settings-title {
+            font-size: 11px;
+            color: #ff9800;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="mazeCanvas"></canvas>
+
+    <div class="hud" id="hud">
+        Размер сетки: <span id="hudSize">-</span><br>
+        Этажей: <span id="hudFloors">-</span><br>
+        Узлов: <span id="hudNodes">-</span> | Ребер: <span id="hudEdges">-</span><br>
+        Покрытие: <span id="hudCoverage">-</span>%<br>
+        Путь до финиша: <span id="hudDist">-</span>
+    </div>
+
+    <div class="floor-indicator" id="floorIndicator">
+        Активный этаж: <span id="activeFloor">1</span> / <span id="totalFloors">1</span>
+    </div>
+
+    <div class="gear-btn" id="gearBtn">⚙️</div>
+
+    <div class="settings-panel" id="settingsPanel">
+        <h3 style="margin:0; text-align:center; color:#fff; font-size:16px;">Настройки генерации</h3>
+        
+        <div class="setting-group">
+            <label>Ширина поля (узлов):</label>
+            <input type="number" id="setWidth" value="8" min="3" max="30">
+        </div>
+        <div class="setting-group">
+            <label>Высота поля (узлов):</label>
+            <input type="number" id="setHeight" value="8" min="3" max="30">
+        </div>
+        <div class="setting-group">
+            <label>Количество этажей:</label>
+            <input type="number" id="setFloors" value="1" min="1" max="10">
+        </div>
+        
+        <div class="separator"></div>
+        
+        <div class="setting-group">
+            <label>Метрика расстояния до финиша:</label>
+            <select id="setMetric">
+                <option value="min">Минимальный путь (граф)</option>
+                <option value="geo">Геометрический (евклидов)</option>
+                <option value="avg">Усредненный (граф + гео)</option>
+            </select>
+        </div>
+
+        <div class="setting-group">
+            <label>Мин. дистанция до финиша:</label>
+            <input type="number" id="setMinDist" value="5" min="1">
+        </div>
+
+        <div class="separator"></div>
+        
+        <div id="floorCoverageSettings">
+            <!-- Динамически добавляемые настройки для каждого этажа -->
+        </div>
+
+        <div id="stairsSettings">
+            <!-- Динамически добавляемые настройки для лестниц между этажами -->
+        </div>
+
+        <div class="separator"></div>
+        
+        <div class="setting-group">
+            <label>Читкод отладки:</label>
+            <input type="text" id="setDebugCode" placeholder="Введите код...">
+        </div>
+
+        <button class="btn-generate" id="btnGenerate">СГЕНЕРИРОВАТЬ</button>
+        
+        <div class="debug-status" id="debugStatus">Режим отладки: ВЫКЛ</div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. МАТЕМАТИКА ТРЕУГОЛЬНОЙ СЕТКИ (МНОГОЯРУСНОЙ)
+        // ==========================================
+        class TriangularGrid {
+            constructor(width, height, floors) {
+                this.width = width;
+                this.height = height;
+                this.floors = floors;
+                this.nodes = new Map();
+                this.edges = new Set();
+                this.generateNodes();
+            }
+
+            generateNodes() {
+                for (let f = 0; f < this.floors; f++) {
+                    for (let y = 0; y < this.height; y++) {
+                        for (let x = 0; x < this.width; x++) {
+                            const key = `${x},${y},${f}`;
+                            this.nodes.set(key, { x, y, floor: f, neighbors: [] });
+                        }
+                    }
+                }
+                this.connectNodes();
+            }
+
+            connectNodes() {
+                const directions = [
+                    [1, 0], [-1, 0],
+                    [0, 1], [0, -1],
+                    [1, -1], [-1, 1]
+                ];
+
+                // Горизонтальные связи (внутри этажа)
+                for (let [key, node] of this.nodes) {
+                    for (let [dx, dy] of directions) {
+                        const nx = node.x + dx;
+                        const ny = node.y + dy;
+                        const nKey = `${nx},${ny},${node.floor}`;
+                        if (this.nodes.has(nKey)) {
+                            node.neighbors.push(nKey);
+                            const edgeKey = key < nKey ? `${key}-${nKey}` : `${nKey}-${key}`;
+                            this.edges.add(edgeKey);
+                        }
+                    }
+                }
+
+                // Вертикальные связи (между этажами)
+                for (let [key, node] of this.nodes) {
+                    if (node.floor < this.floors - 1) {
+                        const nKey = `${node.x},${node.y},${node.floor + 1}`;
+                        if (this.nodes.has(nKey)) {
+                            node.neighbors.push(nKey);
+                            const edgeKey = key < nKey ? `${key}-${nKey}` : `${nKey}-${key}`;
+                            this.edges.add(edgeKey);
+                        }
+                    }
+                }
+            }
+
+            getPixelCoords(x, y, floor, cellSize, offsetX, offsetY, floorOffset) {
+                const px = offsetX + (x + y * 0.5) * cellSize;
+                const py = offsetY + (y * Math.sqrt(3) / 2) * cellSize + floor * floorOffset;
+                return { px, py };
+            }
+        }
+
+        // ==========================================
+        // 2. ГЕНЕРАТОР ЛАБИРИНТА (МНОГОЯРУСНЫЙ)
+        // ==========================================
+        class MazeGenerator {
+            constructor(grid, settings) {
+                this.grid = grid;
+                this.settings = settings;
+                this.activeEdges = new Set();
+                this.walls = new Set();
+                this.startNode = null;
+                this.finishNode = null;
+                this.pathToFinish = [];
+            }
+
+            generate() {
+                this.activeEdges.clear();
+                this.walls.clear();
+
+                // 1. Строим остовное дерево для каждого этажа отдельно
+                for (let f = 0; f < this.grid.floors; f++) {
+                    this.generateSpanningTreeForFloor(f);
+                }
+
+                // 2. Добавляем циклы для каждого этажа (со своим % покрытия)
+                for (let f = 0; f < this.grid.floors; f++) {
+                    const floorCoverage = this.settings.floorCoverages[f] || 30;
+                    this.addCyclesForFloor(f, floorCoverage);
+                }
+
+                // 3. Добавляем лестницы между этажами (с % покрытия для каждой пары)
+                for (let f = 0; f < this.grid.floors - 1; f++) {
+                    const stairsCoverage = this.settings.stairsCoverages[f] || 20;
+                    this.addStairsBetweenFloors(f, f + 1, stairsCoverage);
+                }
+
+                // 4. Выбираем Старт и Финиш (ПОСЛЕ генерации всех этажей и лестниц!)
+                this.placeStartAndFinish();
+
+                // 5. Считаем путь до финиша
+                this.calculatePath();
+            }
+
+            generateSpanningTreeForFloor(floor) {
+                const floorNodes = Array.from(this.grid.nodes.keys()).filter(key => {
+                    const [, , f] = key.split(',').map(Number);
+                    return f === floor;
+                });
+
+                const visited = new Set();
+                const startKey = floorNodes[Math.floor(Math.random() * floorNodes.length)];
+                
+                visited.add(startKey);
+                const frontier = [];
+
+                for (let neighbor of this.grid.nodes.get(startKey).neighbors) {
+                    const [, , nf] = neighbor.split(',').map(Number);
+                    if (nf !== floor) continue; // Только внутри этажа
+                    
+                    const edgeKey = startKey < neighbor ? `${startKey}-${neighbor}` : `${neighbor}-${startKey}`;
+                    frontier.push({ edge: edgeKey, from: startKey, to: neighbor });
+                }
+
+                while (frontier.length > 0) {
+                    const randIdx = Math.floor(Math.random() * frontier.length);
+                    const { edge, from, to } = frontier.splice(randIdx, 1)[0];
+
+                    if (!visited.has(to)) {
+                        visited.add(to);
+                        this.activeEdges.add(edge);
+
+                        for (let neighbor of this.grid.nodes.get(to).neighbors) {
+                            const [, , nf] = neighbor.split(',').map(Number);
+                            if (nf !== floor || visited.has(neighbor)) continue;
+                            
+                            const eKey = to < neighbor ? `${to}-${neighbor}` : `${neighbor}-${to}`;
+                            frontier.push({ edge: eKey, from: to, to: neighbor });
+                        }
+                    }
+                }
+
+                // Все неактивные ребра этого этажа становятся стенами
+                for (let edge of this.grid.edges) {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    if (f1 === floor && f2 === floor && !this.activeEdges.has(edge)) {
+                        this.walls.add(edge);
+                    }
+                }
+            }
+
+            addCyclesForFloor(floor, coverage) {
+                const floorWalls = Array.from(this.walls).filter(edge => {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    return f1 === floor && f2 === floor;
+                });
+
+                const totalFloorEdges = Array.from(this.grid.edges).filter(edge => {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    return f1 === floor && f2 === floor;
+                }).length;
+
+                const currentActive = Array.from(this.activeEdges).filter(edge => {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    return f1 === floor && f2 === floor;
+                }).length;
+
+                const targetActive = Math.floor(totalFloorEdges * (coverage / 100));
+                const edgesToAdd = Math.max(0, targetActive - currentActive);
+
+                for (let i = floorWalls.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [floorWalls[i], floorWalls[j]] = [floorWalls[j], floorWalls[i]];
+                }
+
+                for (let i = 0; i < edgesToAdd && i < floorWalls.length; i++) {
+                    const edge = floorWalls[i];
+                    this.activeEdges.add(edge);
+                    this.walls.delete(edge);
+                }
+            }
+
+            addStairsBetweenFloors(floor1, floor2, coverage) {
+                const verticalWalls = Array.from(this.walls).filter(edge => {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    return (f1 === floor1 && f2 === floor2) || (f1 === floor2 && f2 === floor1);
+                });
+
+                const totalVerticalEdges = Array.from(this.grid.edges).filter(edge => {
+                    const [n1, n2] = edge.split('-');
+                    const [, , f1] = n1.split(',').map(Number);
+                    const [, , f2] = n2.split(',').map(Number);
+                    return (f1 === floor1 && f2 === floor2) || (f1 === floor2 && f2 === floor1);
+                }).length;
+
+                const targetStairs = Math.floor(totalVerticalEdges * (coverage / 100));
+
+                for (let i = verticalWalls.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [verticalWalls[i], verticalWalls[j]] = [verticalWalls[j], verticalWalls[i]];
+                }
+
+                for (let i = 0; i < targetStairs && i < verticalWalls.length; i++) {
+                    const edge = verticalWalls[i];
+                    this.activeEdges.add(edge);
+                    this.walls.delete(edge);
+                }
+            }
+
+            placeStartAndFinish() {
+                const nodes = Array.from(this.grid.nodes.keys());
+                
+                this.startNode = nodes[Math.floor(Math.random() * nodes.length)];
+
+                let bestNode = null;
+                let bestDist = -1;
+                const minReqDist = this.settings.minDist;
+
+                for (let nodeKey of nodes) {
+                    if (nodeKey === this.startNode) continue;
+                    
+                    const dist = this.bfsDistance(this.startNode, nodeKey);
+                    
+                    if (dist >= minReqDist && dist > bestDist) {
+                        bestDist = dist;
+                        bestNode = nodeKey;
+                    }
+                }
+
+                if (!bestNode) {
+                    for (let nodeKey of nodes) {
+                        if (nodeKey === this.startNode) continue;
+                        const dist = this.bfsDistance(this.startNode, nodeKey);
+                        if (dist > bestDist) {
+                            bestDist = dist;
+                            bestNode = nodeKey;
+                        }
+                    }
+                }
+
+                this.finishNode = bestNode;
+            }
+
+            getDistance(fromKey, toKey) {
+                const fromNode = this.grid.nodes.get(fromKey);
+                const toNode = this.grid.nodes.get(toKey);
+
+                if (this.settings.metric === 'geo') {
+                    const dx = (toNode.x - fromNode.x) + (toNode.y - fromNode.y) * 0.5;
+                    const dy = (toNode.y - fromNode.y) * Math.sqrt(3) / 2;
+                    const dz = (toNode.floor - fromNode.floor) * 2;
+                    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+                } 
+                else if (this.settings.metric === 'avg') {
+                    const graphDist = this.bfsDistance(fromKey, toKey);
+                    const dx = (toNode.x - fromNode.x) + (toNode.y - fromNode.y) * 0.5;
+                    const dy = (toNode.y - fromNode.y) * Math.sqrt(3) / 2;
+                    const dz = (toNode.floor - fromNode.floor) * 2;
+                    const geoDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    return (graphDist + geoDist) / 2;
+                } 
+                else {
+                    return this.bfsDistance(fromKey, toKey);
+                }
+            }
+
+            bfsDistance(fromKey, toKey) {
+                if (fromKey === toKey) return 0;
+                const queue = [[fromKey, 0]];
+                const visited = new Set([fromKey]);
+
+                while (queue.length > 0) {
+                    const [current, dist] = queue.shift();
+                    if (current === toKey) return dist;
+
+                    for (let neighbor of this.grid.nodes.get(current).neighbors) {
+                        if (!visited.has(neighbor)) {
+                            const edgeKey = current < neighbor ? `${current}-${neighbor}` : `${neighbor}-${current}`;
+                            if (this.activeEdges.has(edgeKey)) {
+                                visited.add(neighbor);
+                                queue.push([neighbor, dist + 1]);
+                            }
+                        }
+                    }
+                }
+                return Infinity;
+            }
+
+            calculatePath() {
+                const queue = [[this.startNode, [this.startNode]]];
+                const visited = new Set([this.startNode]);
+
+                while (queue.length > 0) {
+                    const [current, path] = queue.shift();
+                    if (current === this.finishNode) {
+                        this.pathToFinish = path;
+                        return;
+                    }
+
+                    for (let neighbor of this.grid.nodes.get(current).neighbors) {
+                        if (!visited.has(neighbor)) {
+                            const edgeKey = current < neighbor ? `${current}-${neighbor}` : `${neighbor}-${current}`;
+                            if (this.activeEdges.has(edgeKey)) {
+                                visited.add(neighbor);
+                                queue.push([neighbor, [...path, neighbor]]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 3. РЕНДЕР И UI
+        // ==========================================
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let grid, maze;
+        let debugMode = false;
+        let activeFloor = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth * 0.9;
+            canvas.height = window.innerHeight * 0.9;
+            if (grid) render();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function updateDynamicSettings() {
+            const floors = parseInt(document.getElementById('setFloors').value);
+            const floorCoverageContainer = document.getElementById('floorCoverageSettings');
+            const stairsContainer = document.getElementById('stairsSettings');
+            
+            floorCoverageContainer.innerHTML = '';
+            stairsContainer.innerHTML = '';
+
+            // Настройки % покрытия для каждого этажа
+            for (let f = 0; f < floors; f++) {
+                const div = document.createElement('div');
+                div.className = 'floor-settings';
+                div.innerHTML = `
+                    <div class="floor-settings-title">Этаж ${f + 1}</div>
+                    <div class="setting-group">
+                        <label>% покрытия ребрами:</label>
+                        <input type="range" id="floorCoverage_${f}" min="0" max="100" value="30">
+                        <span id="floorCoverageVal_${f}" style="text-align:center; font-size:10px;">30%</span>
+                    </div>
+                `;
+                floorCoverageContainer.appendChild(div);
+
+                document.getElementById(`floorCoverage_${f}`).addEventListener('input', (e) => {
+                    document.getElementById(`floorCoverageVal_${f}`).textContent = e.target.value + '%';
+                });
+            }
+
+            // Настройки % лестниц между каждой парой этажей
+            if (floors > 1) {
+                const stairsTitle = document.createElement('div');
+                stairsTitle.className = 'floor-settings-title';
+                stairsTitle.textContent = 'Лестницы между этажами';
+                stairsTitle.style.marginTop = '10px';
+                stairsContainer.appendChild(stairsTitle);
+
+                for (let f = 0; f < floors - 1; f++) {
+                    const div = document.createElement('div');
+                    div.className = 'floor-settings';
+                    div.innerHTML = `
+                        <div class="setting-group">
+                            <label>Этаж ${f + 1} ↔ Этаж ${f + 2} (% лестниц):</label>
+                            <input type="range" id="stairsCoverage_${f}" min="0" max="100" value="20">
+                            <span id="stairsCoverageVal_${f}" style="text-align:center; font-size:10px;">20%</span>
+                        </div>
+                    `;
+                    stairsContainer.appendChild(div);
+
+                    document.getElementById(`stairsCoverage_${f}`).addEventListener('input', (e) => {
+                        document.getElementById(`stairsCoverageVal_${f}`).textContent = e.target.value + '%';
+                    });
+                }
+            }
+        }
+
+        function initMaze() {
+            const w = parseInt(document.getElementById('setWidth').value);
+            const h = parseInt(document.getElementById('setHeight').value);
+            const floors = parseInt(document.getElementById('setFloors').value);
+            const metric = document.getElementById('setMetric').value;
+            const minDist = parseInt(document.getElementById('setMinDist').value);
+
+            // Собираем настройки покрытия для каждого этажа
+            const floorCoverages = [];
+            for (let f = 0; f < floors; f++) {
+                const coverage = parseInt(document.getElementById(`floorCoverage_${f}`).value) || 30;
+                floorCoverages.push(coverage);
+            }
+
+            // Собираем настройки лестниц для каждой пары этажей
+            const stairsCoverages = [];
+            for (let f = 0; f < floors - 1; f++) {
+                const coverage = parseInt(document.getElementById(`stairsCoverage_${f}`).value) || 20;
+                stairsCoverages.push(coverage);
+            }
+
+            grid = new TriangularGrid(w, h, floors);
+            
+            const settings = { metric, minDist, floorCoverages, stairsCoverages };
+            maze = new MazeGenerator(grid, settings);
+            maze.generate();
+
+            activeFloor = 0;
+            updateHUD();
+            render();
+        }
+
+        function updateHUD() {
+            document.getElementById('hudSize').textContent = `${grid.width}x${grid.height}`;
+            document.getElementById('hudFloors').textContent = grid.floors;
+            document.getElementById('hudNodes').textContent = grid.nodes.size;
+            document.getElementById('hudEdges').textContent = maze.activeEdges.size;
+            
+            const totalEdges = grid.edges.size;
+            const cov = ((maze.activeEdges.size / totalEdges) * 100).toFixed(1);
+            document.getElementById('hudCoverage').textContent = cov;
+
+            const dist = maze.getDistance(maze.startNode, maze.finishNode);
+            document.getElementById('hudDist').textContent = dist.toFixed(2);
+
+            document.getElementById('activeFloor').textContent = activeFloor + 1;
+            document.getElementById('totalFloors').textContent = grid.floors;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const cellSize = Math.min(
+                canvas.width / (grid.width + grid.height * 0.5 + 2),
+                canvas.height / (grid.height * Math.sqrt(3) / 2 + grid.floors * 3 + 2)
+            );
+            
+            const floorOffset = cellSize * 3;
+            const totalHeight = grid.height * Math.sqrt(3) / 2 * cellSize + (grid.floors - 1) * floorOffset;
+            const offsetX = (canvas.width - (grid.width + grid.height * 0.5) * cellSize) / 2;
+            const offsetY = (canvas.height - totalHeight) / 2;
+
+            // Рисуем этажи от верхнего к нижнему
+            for (let f = grid.floors - 1; f >= 0; f--) {
+                const isActive = f === activeFloor;
+                const alpha = isActive ? 1.0 : 0.2;
+                const yOffset = (f - activeFloor) * floorOffset;
+
+                // Стены
+                ctx.strokeStyle = `rgba(85, 85, 85, ${alpha})`;
+                ctx.lineWidth = isActive ? 2 : 1;
+                for (let edge of maze.walls) {
+                    const [n1, n2] = edge.split('-');
+                    const [x1, y1, f1] = n1.split(',').map(Number);
+                    const [x2, y2, f2] = n2.split(',').map(Number);
+                    
+                    if (f1 !== f || f2 !== f) continue;
+
+                    const p1 = grid.getPixelCoords(x1, y1, f1, cellSize, offsetX, offsetY + yOffset, 0);
+                    const p2 = grid.getPixelCoords(x2, y2, f2, cellSize, offsetX, offsetY + yOffset, 0);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(p1.px, p1.py);
+                    ctx.lineTo(p2.px, p2.py);
+                    ctx.stroke();
+                }
+
+                // Коридоры
+                ctx.strokeStyle = `rgba(170, 170, 170, ${alpha})`;
+                ctx.lineWidth = isActive ? 4 : 2;
+                for (let edge of maze.activeEdges) {
+                    const [n1, n2] = edge.split('-');
+                    const [x1, y1, f1] = n1.split(',').map(Number);
+                    const [x2, y2, f2] = n2.split(',').map(Number);
+                    
+                    if (f1 !== f || f2 !== f) continue;
+
+                    const p1 = grid.getPixelCoords(x1, y1, f1, cellSize, offsetX, offsetY + yOffset, 0);
+                    const p2 = grid.getPixelCoords(x2, y2, f2, cellSize, offsetX, offsetY + yOffset, 0);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(p1.px, p1.py);
+                    ctx.lineTo(p2.px, p2.py);
+                    ctx.stroke();
+                }
+
+                // РЕЖИМ ОТЛАДКИ - сетка
+                if (debugMode) {
+                    // Все узлы
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
+                    for (let [key, node] of grid.nodes) {
+                        if (node.floor !== f) continue;
+                        const p = grid.getPixelCoords(node.x, node.y, node.floor, cellSize, offsetX, offsetY + yOffset, 0);
+                        ctx.beginPath();
+                        ctx.arc(p.px, p.py, isActive ? 4 : 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Все возможные ребра (сетка)
+                    ctx.strokeStyle = `rgba(100, 100, 100, ${alpha * 0.3})`;
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([2, 4]);
+                    for (let edge of grid.edges) {
+                        const [n1, n2] = edge.split('-');
+                        const [x1, y1, f1] = n1.split(',').map(Number);
+                        const [x2, y2, f2] = n2.split(',').map(Number);
+                        
+                        if (f1 !== f || f2 !== f) continue;
+
+                        const p1 = grid.getPixelCoords(x1, y1, f1, cellSize, offsetX, offsetY + yOffset, 0);
+                        const p2 = grid.getPixelCoords(x2, y2, f2, cellSize, offsetX, offsetY + yOffset, 0);
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(p1.px, p1.py);
+                        ctx.lineTo(p2.px, p2.py);
+                        ctx.stroke();
+                    }
+                    ctx.setLineDash([]);
+                }
+            }
+
+            // Рисуем лестницы между этажами (ВСЕГДА, не только в debug режиме)
+            for (let edge of maze.activeEdges) {
+                const [n1, n2] = edge.split('-');
+                const [x1, y1, f1] = n1.split(',').map(Number);
+                const [x2, y2, f2] = n2.split(',').map(Number);
+                
+                if (f1 === f2) continue; // Только вертикальные
+
+                const isActive1 = f1 === activeFloor;
+                const isActive2 = f2 === activeFloor;
+                const alpha = (isActive1 || isActive2) ? 1.0 : 0.3;
+
+                const p1 = grid.getPixelCoords(x1, y1, f1, cellSize, offsetX, offsetY, floorOffset);
+                const p2 = grid.getPixelCoords(x2, y2, f2, cellSize, offsetX, offsetY, floorOffset);
+                
+                // Неполная вертикальная линия (только до середины)
+                const midY = (p1.py + p2.py) / 2;
+                
+                ctx.strokeStyle = `rgba(255, 152, 0, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(p1.px, p1.py);
+                ctx.lineTo(p1.px, midY); // Только до середины
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Путь до финиша (только в debug режиме)
+            if (debugMode && maze.pathToFinish.length > 1) {
+                for (let i = 0; i < maze.pathToFinish.length - 1; i++) {
+                    const [x1, y1, f1] = maze.pathToFinish[i].split(',').map(Number);
+                    const [x2, y2, f2] = maze.pathToFinish[i + 1].split(',').map(Number);
+                    
+                    const isOnActiveFloor = (f1 === activeFloor || f2 === activeFloor);
+                    const alpha = isOnActiveFloor ? 1.0 : 0.3;
+                    const color = isOnActiveFloor ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)';
+
+                    const p1 = grid.getPixelCoords(x1, y1, f1, cellSize, offsetX, offsetY, floorOffset);
+                    const p2 = grid.getPixelCoords(x2, y2, f2, cellSize, offsetX, offsetY, floorOffset);
+
+                    if (f1 !== f2) {
+                        // Переход между этажами - неполная вертикальная линия
+                        const midY = (p1.py + p2.py) / 2;
+                        ctx.strokeStyle = '#4CAF50';
+                        ctx.lineWidth = 6;
+                        ctx.setLineDash([10, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(p1.px, p1.py);
+                        ctx.lineTo(p1.px, midY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    } else {
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = isOnActiveFloor ? 6 : 3;
+                        ctx.setLineDash(isOnActiveFloor ? [10, 5] : [5, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(p1.px, p1.py);
+                        ctx.lineTo(p2.px, p2.py);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+            }
+
+            // Старт и Финиш (только на своих этажах!)
+            const drawMarker = (key, color, label) => {
+                const [x, y, f] = key.split(',').map(Number);
+                const isOnActiveFloor = f === activeFloor;
+                const alpha = isOnActiveFloor ? 1.0 : 0.0; // Не рисуем на других этажах!
+                
+                if (alpha === 0) return; // Не рисуем маркер на неактивных этажах
+                
+                const p = grid.getPixelCoords(x, y, f, cellSize, offsetX, offsetY, floorOffset);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(p.px, p.py, cellSize * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${cellSize * 0.4}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, p.px, p.py);
+            };
+
+            drawMarker(maze.startNode, '#2196F3', 'S');
+            drawMarker(maze.finishNode, '#F44336', 'F');
+        }
+
+        // ==========================================
+        // 4. ОБРАБОТКА UI
+        // ==========================================
+        const gearBtn = document.getElementById('gearBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const btnGenerate = document.getElementById('btnGenerate');
+        const floorsInput = document.getElementById('setFloors');
+        const debugCodeInput = document.getElementById('setDebugCode');
+        const debugStatus = document.getElementById('debugStatus');
+
+        gearBtn.addEventListener('click', () => {
+            settingsPanel.classList.toggle('active');
+        });
+
+        floorsInput.addEventListener('input', () => {
+            updateDynamicSettings();
+        });
+
+        btnGenerate.addEventListener('click', () => {
+            initMaze();
+        });
+
+        debugCodeInput.addEventListener('input', (e) => {
+            if (e.target.value === 'ANDY_KYBIIK_DEBUGGER') {
+                debugMode = true;
+                debugStatus.textContent = 'Режим отладки: ВКЛ (ANDY_KYBIIK_DEBUGGER)';
+                debugStatus.classList.add('active');
+            } else {
+                debugMode = false;
+                debugStatus.textContent = 'Режим отладки: ВЫКЛ';
+                debugStatus.classList.remove('active');
+            }
+            if(grid) render();
+        });
+
+        // Переключение этажей колесиком мыши
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (!grid) return;
+            
+            if (e.deltaY > 0) {
+                activeFloor = Math.min(activeFloor + 1, grid.floors - 1);
+            } else {
+                activeFloor = Math.max(activeFloor - 1, 0);
+            }
+            
+            updateHUD();
+            render();
+        });
+
+        // Инициализация
+        updateDynamicSettings();
+        initMaze();
+
+    </script>
+</body>
+</html>
